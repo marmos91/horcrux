@@ -66,6 +66,13 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("total shards (data + parity) must be <= 255")
 	}
 
+	if dryRun {
+		if info.IsDir() {
+			return runSplitDirDryRun(input)
+		}
+		return runSplitDryRun(input)
+	}
+
 	// Resolve password once before any work
 	var pwd string
 	if !noEncrypt {
@@ -129,6 +136,36 @@ func runSplitDir(inputDir, pwd string) error {
 			return fmt.Errorf("some files failed to split")
 		}
 	}
+	return nil
+}
+
+func runSplitDryRun(input string) error {
+	r, err := pipeline.DryRunSplit(pipeline.SplitOptions{
+		InputFile:    input,
+		OutputDir:    outputDir,
+		DataShards:   dataShards,
+		ParityShards: parityShards,
+		NoEncrypt:    noEncrypt,
+	})
+	if err != nil {
+		return err
+	}
+	printSplitDryRun(r)
+	return nil
+}
+
+func runSplitDirDryRun(inputDir string) error {
+	results, err := pipeline.DryRunSplitDir(pipeline.SplitDirOptions{
+		InputDir:     inputDir,
+		OutputDir:    outputDir,
+		DataShards:   dataShards,
+		ParityShards: parityShards,
+		NoEncrypt:    noEncrypt,
+	})
+	if err != nil {
+		return err
+	}
+	printSplitDirDryRun(results)
 	return nil
 }
 

@@ -204,6 +204,60 @@ func Split(opts SplitOptions) error {
 	return nil
 }
 
+// SplitDryRunResult holds the computed metadata for a dry-run split.
+type SplitDryRunResult struct {
+	OriginalName    string
+	OriginalSize    uint64
+	DataShards      int
+	ParityShards    int
+	TotalShards     int
+	PerShardPayload uint64
+	PerShardFileSize uint64
+	TotalOutputSize uint64
+	Encrypted       bool
+	OutputDir       string
+	ShardPaths      []string
+}
+
+// DryRunSplit computes what a split would produce without writing any files.
+func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
+	info, err := os.Stat(opts.InputFile)
+	if err != nil {
+		return nil, fmt.Errorf("stat input file: %w", err)
+	}
+
+	originalSize := uint64(info.Size())
+	originalName := filepath.Base(opts.InputFile)
+	totalShards := opts.DataShards + opts.ParityShards
+	encrypted := !opts.NoEncrypt
+
+	var perShardPayload uint64
+	if originalSize > 0 {
+		perShardPayload = (originalSize + uint64(opts.DataShards) - 1) / uint64(opts.DataShards)
+	}
+	perShardFileSize := shard.HeaderSize + perShardPayload + shard.TrailerSize
+	totalOutputSize := perShardFileSize * uint64(totalShards)
+
+	shardPaths := make([]string, totalShards)
+	for i := 0; i < totalShards; i++ {
+		shardPaths[i] = filepath.Join(opts.OutputDir, shardFilename(originalName, i))
+	}
+
+	return &SplitDryRunResult{
+		OriginalName:    originalName,
+		OriginalSize:    originalSize,
+		DataShards:      opts.DataShards,
+		ParityShards:    opts.ParityShards,
+		TotalShards:     totalShards,
+		PerShardPayload: perShardPayload,
+		PerShardFileSize: perShardFileSize,
+		TotalOutputSize: totalOutputSize,
+		Encrypted:       encrypted,
+		OutputDir:       opts.OutputDir,
+		ShardPaths:      shardPaths,
+	}, nil
+}
+
 func shardFilename(originalName string, index int) string {
 	return fmt.Sprintf("%s.%03d.hrcx", originalName, index)
 }

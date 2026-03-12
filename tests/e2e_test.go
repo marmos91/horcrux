@@ -726,6 +726,205 @@ func TestE2E_SplitDir_Workers(t *testing.T) {
 	}
 }
 
+// --- Dry-run E2E tests ---
+
+func TestE2E_SplitDryRun_SingleFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	out, err := runHrcx(t, "split", "--dry-run", "--no-encrypt", "-o", shardDir, input)
+	if err != nil {
+		t.Fatalf("split --dry-run failed: %v\n%s", err, out)
+	}
+
+	// Verify output contains expected metadata
+	checks := []string{
+		"Dry run: split",
+		"small.txt",
+		"Encryption:   disabled",
+		"Shards:",
+		"data",
+		"parity",
+		"Per shard:",
+		"Total output:",
+		"Shard files:",
+		".hrcx",
+	}
+	for _, check := range checks {
+		if !strings.Contains(out, check) {
+			t.Errorf("dry-run output missing %q\nGot: %s", check, out)
+		}
+	}
+
+	// Verify no files were created
+	if _, err := os.Stat(shardDir); !os.IsNotExist(err) {
+		t.Fatalf("expected no output directory to be created, but %s exists", shardDir)
+	}
+}
+
+func TestE2E_SplitDryRun_Encrypted(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	// --dry-run should NOT prompt for password
+	out, err := runHrcx(t, "split", "--dry-run", "-o", shardDir, input)
+	if err != nil {
+		t.Fatalf("split --dry-run (encrypted) failed: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "Encryption:   enabled") {
+		t.Errorf("expected encryption enabled in output\nGot: %s", out)
+	}
+
+	// Verify no files were created
+	if _, err := os.Stat(shardDir); !os.IsNotExist(err) {
+		t.Fatalf("expected no output directory to be created")
+	}
+}
+
+func TestE2E_SplitDryRun_Directory(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "a.txt"), "file a content")
+	createTestFile(t, filepath.Join(inputDir, "b.txt"), "file b content here")
+
+	out, err := runHrcx(t, "split", "--dry-run", "--no-encrypt", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split --dry-run dir failed: %v\n%s", err, out)
+	}
+
+	checks := []string{
+		"Dry run: split directory",
+		"a.txt",
+		"b.txt",
+		"2 files",
+	}
+	for _, check := range checks {
+		if !strings.Contains(out, check) {
+			t.Errorf("dry-run dir output missing %q\nGot: %s", check, out)
+		}
+	}
+
+	// Verify no output files
+	if _, err := os.Stat(shardDir); !os.IsNotExist(err) {
+		t.Fatalf("expected no output directory to be created")
+	}
+}
+
+func TestE2E_MergeDryRun_SingleDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	// First, actually split
+	if _, err := runHrcx(t, "split", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "merge", "--dry-run", shardDir)
+	if err != nil {
+		t.Fatalf("merge --dry-run failed: %v\n%s", err, out)
+	}
+
+	checks := []string{
+		"Dry run: merge",
+		"small.txt",
+		"Encryption:       enabled",
+		"Status:           RECOVERABLE",
+		"Missing:          none",
+		"Corrupt:          none",
+	}
+	for _, check := range checks {
+		if !strings.Contains(out, check) {
+			t.Errorf("dry-run merge output missing %q\nGot: %s", check, out)
+		}
+	}
+
+	// Verify no output file was created
+	if _, err := os.Stat(filepath.Join(tmpDir, "small.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected no output file to be created")
+	}
+}
+
+func TestE2E_MergeDryRun_MissingShards(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-n", "5", "-k", "3", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Delete 2 shards (still recoverable: 6 of 8 remain, need 5)
+	os.Remove(filepath.Join(shardDir, "small.txt.003.hrcx"))
+	os.Remove(filepath.Join(shardDir, "small.txt.007.hrcx"))
+
+	out, err := runHrcx(t, "merge", "--dry-run", shardDir)
+	if err != nil {
+		t.Fatalf("merge --dry-run with missing shards failed: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "RECOVERABLE") {
+		t.Errorf("expected RECOVERABLE status\nGot: %s", out)
+	}
+	if !strings.Contains(out, "3") && !strings.Contains(out, "7") {
+		t.Errorf("expected missing indices to include 3 and 7\nGot: %s", out)
+	}
+}
+
+func TestE2E_MergeDryRun_BatchDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "a.txt"), "file a content")
+	createTestFile(t, filepath.Join(inputDir, "b.txt"), "file b content")
+
+	// Split directory first
+	if _, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir); err != nil {
+		t.Fatalf("split dir failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "merge", "--dry-run", shardDir)
+	if err != nil {
+		t.Fatalf("merge --dry-run batch failed: %v\n%s", err, out)
+	}
+
+	checks := []string{
+		"Dry run: merge directory",
+		"a.txt",
+		"b.txt",
+		"2 files",
+		"recoverable",
+	}
+	for _, check := range checks {
+		if !strings.Contains(out, check) {
+			t.Errorf("dry-run merge dir output missing %q\nGot: %s", check, out)
+		}
+	}
+}
+
+func TestE2E_DryRun_NoPasswordPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	// split --dry-run without --no-encrypt and without -p should NOT prompt
+	// (would hang if it did, so a successful return proves it)
+	out, err := runHrcx(t, "split", "--dry-run", "-o", shardDir, input)
+	if err != nil {
+		t.Fatalf("split --dry-run should not prompt for password: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "Encryption:   enabled") {
+		t.Errorf("expected encryption enabled in dry-run output\nGot: %s", out)
+	}
+}
+
 func TestE2E_SplitDir_FailFast(t *testing.T) {
 	tmpDir := t.TempDir()
 	inputDir := filepath.Join(tmpDir, "input")

@@ -39,6 +39,13 @@ func init() {
 func runMerge(cmd *cobra.Command, args []string) error {
 	shardDir := args[0]
 
+	if dryRun {
+		if pipeline.IsBatchMergeDir(shardDir) {
+			return runMergeDirDryRun(shardDir)
+		}
+		return runMergeSingleDryRun(shardDir)
+	}
+
 	if pipeline.IsBatchMergeDir(shardDir) {
 		return runMergeDir(shardDir)
 	}
@@ -56,19 +63,38 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	return pipeline.Merge(opts)
 }
 
-func runMergeDir(inputDir string) error {
-	outDir := mergeOutput
-	if outDir == "" {
-		outDir = "."
+func runMergeSingleDryRun(shardDir string) error {
+	r, err := pipeline.DryRunMerge(pipeline.MergeOptions{
+		ShardDir:   shardDir,
+		OutputFile: mergeOutput,
+	})
+	if err != nil {
+		return err
 	}
+	printMergeDryRun(r)
+	return nil
+}
 
+func runMergeDirDryRun(inputDir string) error {
+	results, err := pipeline.DryRunMergeDir(pipeline.MergeDirOptions{
+		InputDir:  inputDir,
+		OutputDir: mergeOutput,
+	})
+	if err != nil {
+		return err
+	}
+	printMergeDirDryRun(results)
+	return nil
+}
+
+func runMergeDir(inputDir string) error {
 	results, err := pipeline.MergeDir(pipeline.MergeDirOptions{
-		InputDir: inputDir,
-		OutputDir: outDir,
-		Password: mergePassword,
-		Verbose:  verbose,
-		Workers:  mergeWorkers,
-		FailFast: mergeFailFast,
+		InputDir:  inputDir,
+		OutputDir: mergeOutput,
+		Password:  mergePassword,
+		Verbose:   verbose,
+		Workers:   mergeWorkers,
+		FailFast:  mergeFailFast,
 		PromptPassword: func() (string, error) {
 			return promptPassword("Enter decryption password: ")
 		},
