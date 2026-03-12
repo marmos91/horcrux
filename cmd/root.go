@@ -7,7 +7,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var verbose bool
+var (
+	verbose bool
+	dryRun  bool
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "hrcx",
@@ -24,4 +27,5 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose output with progress")
+	rootCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "Preview what would happen without writing any files")
 }

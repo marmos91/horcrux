@@ -39,7 +39,7 @@ type mergeFileEntry struct {
 
 // Merge reconstructs a file from shards.
 func Merge(opts MergeOptions) error {
-	shards, err := discoverShards(opts.ShardDir)
+	shards, err := DiscoverShards(opts.ShardDir)
 	if err != nil {
 		return err
 	}
@@ -260,7 +260,131 @@ func Merge(opts MergeOptions) error {
 	return nil
 }
 
-func discoverShards(dir string) ([]shardInfo, error) {
+// MergeDryRunResult holds the computed metadata for a dry-run merge.
+type MergeDryRunResult struct {
+	OriginalName        string
+	OriginalSize        uint64
+	DataShards          int
+	ParityShards        int
+	TotalShards         int
+	ShardsFound         int
+	ShardsValid         int
+	MissingIndices      []int
+	CorruptIndices      []int
+	Encrypted           bool
+	Recoverable         bool
+	NeedsReconstruction bool
+	OutputFile          string
+	RelPath             string // Relative shard dir path from input root (batch mode only)
+}
+
+// DryRunMerge analyzes shards and reports recoverability without writing files.
+func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
+	shards, err := DiscoverShards(opts.ShardDir)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(shards) == 0 {
+		return nil, fmt.Errorf("no valid .hrcx shard files found in %s", opts.ShardDir)
+	}
+
+	ref := shards[0].Header
+	dataShards := int(ref.DataShards)
+	parityShards := int(ref.ParityShards)
+	totalShards := dataShards + parityShards
+
+	// Cross-validate headers; exclude inconsistent shards
+	inconsistentIndices := make(map[int]struct{})
+	for _, s := range shards[1:] {
+		if err := validateConsistency(ref, s.Header, s.Path); err != nil {
+			inconsistentIndices[int(s.Header.ShardIndex)] = struct{}{}
+		}
+	}
+
+	// Build index map, detect duplicates, skip inconsistent and out-of-range shards
+	indexMap := make(map[int]*shardInfo)
+	for i := range shards {
+		idx := int(shards[i].Header.ShardIndex)
+		if idx < 0 || idx >= totalShards {
+			continue
+		}
+		if _, inconsistent := inconsistentIndices[idx]; inconsistent {
+			continue
+		}
+		if _, exists := indexMap[idx]; exists {
+			continue
+		}
+		indexMap[idx] = &shards[i]
+	}
+
+	// Verify payload checksums
+	validMap := make(map[int]*shardInfo)
+	var corruptIndices []int
+	for idx, s := range indexMap {
+		reader, err := shard.OpenReader(s.Path)
+		if err != nil {
+			corruptIndices = append(corruptIndices, idx)
+			continue
+		}
+
+		if err := reader.VerifyPayload(); err != nil {
+			reader.Close()
+			corruptIndices = append(corruptIndices, idx)
+			continue
+		}
+		reader.Close()
+		validMap[idx] = s
+	}
+
+	// Determine truly missing indices (not found on disk at all)
+	var missingIndices []int
+	for i := 0; i < totalShards; i++ {
+		if _, inIndex := indexMap[i]; !inIndex {
+			missingIndices = append(missingIndices, i)
+		}
+	}
+
+	recoverable := len(validMap) >= dataShards
+
+	needsReconstruction := false
+	if recoverable {
+		for i := 0; i < dataShards; i++ {
+			if _, ok := validMap[i]; !ok {
+				needsReconstruction = true
+				break
+			}
+		}
+	}
+
+	outputFile := opts.OutputFile
+	if outputFile == "" {
+		outputFile = ref.OriginalFilename
+	}
+
+	sort.Ints(missingIndices)
+	sort.Ints(corruptIndices)
+
+	return &MergeDryRunResult{
+		OriginalName:        ref.OriginalFilename,
+		OriginalSize:        ref.OriginalFileSize,
+		DataShards:          dataShards,
+		ParityShards:        parityShards,
+		TotalShards:         totalShards,
+		ShardsFound:         len(indexMap),
+		ShardsValid:         len(validMap),
+		MissingIndices:      missingIndices,
+		CorruptIndices:      corruptIndices,
+		Encrypted:           ref.IsEncrypted(),
+		Recoverable:         recoverable,
+		NeedsReconstruction: needsReconstruction,
+		OutputFile:          outputFile,
+	}, nil
+}
+
+// DiscoverShards finds and parses all .hrcx shard files in a directory,
+// returning them sorted by shard index.
+func DiscoverShards(dir string) ([]shardInfo, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("reading shard directory: %w", err)

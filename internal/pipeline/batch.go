@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/marmos91/horcrux/internal/shard"
@@ -51,23 +52,9 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 		workers = runtime.NumCPU()
 	}
 
-	// Collect all regular files
-	var files []string
-	err := filepath.WalkDir(opts.InputDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !d.IsDir() && d.Type().IsRegular() {
-			files = append(files, path)
-		}
-		return nil
-	})
+	files, err := collectRegularFiles(opts.InputDir)
 	if err != nil {
-		return nil, fmt.Errorf("walking input directory: %w", err)
-	}
-
-	if len(files) == 0 {
-		return nil, fmt.Errorf("no files found in %s", opts.InputDir)
+		return nil, err
 	}
 
 	results := make([]FileResult, len(files))
@@ -141,6 +128,10 @@ func IsBatchMergeDir(dir string) bool {
 // MergeDir performs a batch merge of multiple shard directories.
 // It recursively finds leaf directories containing .hrcx files and merges each.
 func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
+	if opts.OutputDir == "" {
+		opts.OutputDir = "."
+	}
+
 	workers := opts.Workers
 	if workers <= 0 {
 		workers = runtime.NumCPU()
@@ -230,6 +221,102 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 	return results, nil
 }
 
+// DryRunSplitDir computes dry-run results for all files in a directory.
+func DryRunSplitDir(opts SplitDirOptions) ([]SplitDryRunResult, error) {
+	files, err := collectRegularFiles(opts.InputDir)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]SplitDryRunResult, 0, len(files))
+	for _, file := range files {
+		rel, err := filepath.Rel(opts.InputDir, file)
+		if err != nil {
+			return nil, fmt.Errorf("computing relative path: %w", err)
+		}
+
+		outSubDir := filepath.Join(opts.OutputDir, rel)
+		r, err := DryRunSplit(SplitOptions{
+			InputFile:    file,
+			OutputDir:    outSubDir,
+			DataShards:   opts.DataShards,
+			ParityShards: opts.ParityShards,
+			NoEncrypt:    opts.NoEncrypt,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("dry-run split %s: %w", rel, err)
+		}
+		r.RelPath = rel
+		results = append(results, *r)
+	}
+
+	return results, nil
+}
+
+// DryRunMergeDir computes dry-run results for all shard directories.
+func DryRunMergeDir(opts MergeDirOptions) ([]MergeDryRunResult, error) {
+	if opts.OutputDir == "" {
+		opts.OutputDir = "."
+	}
+
+	shardDirs, err := findShardDirs(opts.InputDir)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(shardDirs) == 0 {
+		return nil, fmt.Errorf("no shard directories found in %s", opts.InputDir)
+	}
+
+	results := make([]MergeDryRunResult, 0, len(shardDirs))
+	for _, shardDir := range shardDirs {
+		rel, err := filepath.Rel(opts.InputDir, shardDir)
+		if err != nil {
+			return nil, fmt.Errorf("computing relative path: %w", err)
+		}
+
+		origName, err := peekOriginalFilename(shardDir)
+		if err != nil {
+			return nil, fmt.Errorf("peeking filename in %s: %w", rel, err)
+		}
+
+		outputFile := filepath.Join(opts.OutputDir, filepath.Dir(rel), origName)
+
+		r, err := DryRunMerge(MergeOptions{
+			ShardDir:   shardDir,
+			OutputFile: outputFile,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("dry-run merge %s: %w", rel, err)
+		}
+		r.RelPath = rel
+		results = append(results, *r)
+	}
+
+	return results, nil
+}
+
+// collectRegularFiles recursively collects all regular files in a directory tree.
+func collectRegularFiles(dir string) ([]string, error) {
+	var files []string
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && d.Type().IsRegular() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walking input directory: %w", err)
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no files found in %s", dir)
+	}
+	return files, nil
+}
+
 // findShardDirs recursively discovers all directories containing .hrcx files.
 func findShardDirs(root string) ([]string, error) {
 	dirSet := make(map[string]bool)
@@ -251,8 +338,7 @@ func findShardDirs(root string) ([]string, error) {
 	for d := range dirSet {
 		dirs = append(dirs, d)
 	}
-	// Sort for deterministic output
-	sortStrings(dirs)
+	sort.Strings(dirs)
 
 	return dirs, nil
 }
@@ -306,13 +392,4 @@ func peekOriginalFilename(dir string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no valid .hrcx files in %s", dir)
-}
-
-// sortStrings sorts a slice of strings in place.
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
