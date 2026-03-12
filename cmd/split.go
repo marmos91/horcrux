@@ -31,6 +31,7 @@ var (
 	noEncrypt    bool
 	workers      int
 	failFast     bool
+	noManifest   bool
 )
 
 func init() {
@@ -41,6 +42,7 @@ func init() {
 	splitCmd.Flags().BoolVar(&noEncrypt, "no-encrypt", false, "Skip encryption")
 	splitCmd.Flags().IntVarP(&workers, "workers", "w", runtime.NumCPU(), "Max parallel operations (directory mode)")
 	splitCmd.Flags().BoolVar(&failFast, "fail-fast", false, "Stop on first error (directory mode)")
+	splitCmd.Flags().BoolVar(&noManifest, "no-manifest", false, "Don't generate a manifest file")
 
 	rootCmd.AddCommand(splitCmd)
 }
@@ -100,7 +102,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return runSplitDir(input, pwd, prog)
 	}
 
-	return pipeline.Split(pipeline.SplitOptions{
+	result, err := pipeline.Split(pipeline.SplitOptions{
 		InputFile:    input,
 		OutputDir:    outputDir,
 		DataShards:   dataShards,
@@ -110,6 +112,14 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		Verbose:      verbose && !quiet,
 		Progress:     prog,
 	})
+	if err != nil {
+		return err
+	}
+
+	if noManifest {
+		return nil
+	}
+	return pipeline.SaveManifest(result, outputDir)
 }
 
 func runSplitDir(inputDir, pwd string, prog progress.Reporter) error {
@@ -124,6 +134,7 @@ func runSplitDir(inputDir, pwd string, prog progress.Reporter) error {
 		Workers:      workers,
 		FailFast:     failFast,
 		Progress:     prog,
+		NoManifest:   noManifest,
 	})
 	if err != nil && results == nil {
 		return err

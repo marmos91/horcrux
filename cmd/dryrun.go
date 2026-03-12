@@ -15,6 +15,7 @@ func printSplitDryRun(r *pipeline.SplitDryRunResult) {
 	fmt.Printf("  Shards:       %d data + %d parity = %d total\n", r.DataShards, r.ParityShards, r.TotalShards)
 	fmt.Printf("  Per shard:    %s payload (%s on disk)\n", display.FormatSize(r.PerShardPayload), display.FormatSize(r.PerShardFileSize))
 	fmt.Printf("  Total output: %s\n", display.FormatSize(r.TotalOutputSize))
+	fmt.Printf("  Manifest:     %s\n", enabledLabel(!noManifest))
 	fmt.Printf("  Output dir:   %s\n", r.OutputDir)
 	fmt.Println("  Shard files:")
 	for _, p := range r.ShardPaths {
@@ -51,12 +52,8 @@ func printSplitDirDryRun(results []pipeline.SplitDryRunResult) {
 
 	var totalInput, totalOutput uint64
 	for _, r := range results {
-		name := r.RelPath
-		if name == "" {
-			name = r.OriginalName
-		}
 		fmt.Printf("  %-30s %8s -> %d shards (%s total)\n",
-			name, display.FormatSize(r.OriginalSize), r.TotalShards, display.FormatSize(r.TotalOutputSize))
+			displayName(r.RelPath, r.OriginalName), display.FormatSize(r.OriginalSize), r.TotalShards, display.FormatSize(r.TotalOutputSize))
 		totalInput += r.OriginalSize
 		totalOutput += r.TotalOutputSize
 	}
@@ -77,16 +74,20 @@ func printMergeDirDryRun(results []pipeline.MergeDryRunResult) {
 			recoverable++
 		}
 
-		name := r.RelPath
-		if name == "" {
-			name = r.OriginalName
-		}
 		fmt.Printf("  %-4s  %-30s  %d/%d shards valid  %s\n",
-			status, name, r.ShardsValid, r.TotalShards, display.FormatSize(r.OriginalSize))
+			status, displayName(r.RelPath, r.OriginalName), r.ShardsValid, r.TotalShards, display.FormatSize(r.OriginalSize))
 	}
 
 	fmt.Println()
 	fmt.Printf("  %d files: %d recoverable, %d not recoverable\n", len(results), recoverable, len(results)-recoverable)
+}
+
+// displayName returns the relative path if set, otherwise the original name.
+func displayName(relPath, originalName string) string {
+	if relPath != "" {
+		return relPath
+	}
+	return originalName
 }
 
 // enabledLabel returns "enabled" or "disabled" for a boolean flag.
