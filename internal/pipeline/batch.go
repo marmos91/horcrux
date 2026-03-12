@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/marmos91/horcrux/internal/shard"
 	"golang.org/x/sync/errgroup"
 )
@@ -30,6 +31,7 @@ type SplitDirOptions struct {
 	Verbose      bool
 	Workers      int
 	FailFast     bool
+	Progress     progress.Reporter
 }
 
 // MergeDirOptions configures a batch merge of multiple shard directories.
@@ -40,6 +42,7 @@ type MergeDirOptions struct {
 	Verbose        bool
 	Workers        int
 	FailFast       bool
+	Progress       progress.Reporter
 	PromptPassword func() (string, error)
 }
 
@@ -58,6 +61,8 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 	}
 
 	results := make([]FileResult, len(files))
+	prog := progress.OrNop(opts.Progress)
+	prog.SetTotal(len(files))
 
 	g, ctx := errgroup.WithContext(context.Background())
 	g.SetLimit(workers)
@@ -84,6 +89,7 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 				Password:     opts.Password,
 				NoEncrypt:    opts.NoEncrypt,
 				Verbose:      opts.Verbose,
+				Progress:     opts.Progress,
 			})
 			results[i].Error = splitErr
 
@@ -163,6 +169,9 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 		return nil, fmt.Errorf("no shard directories found in %s", opts.InputDir)
 	}
 
+	prog := progress.OrNop(opts.Progress)
+	prog.SetTotal(len(shardDirs))
+
 	results := make([]FileResult, len(shardDirs))
 
 	g, ctx := errgroup.WithContext(context.Background())
@@ -204,6 +213,7 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 				OutputFile: filepath.Join(outDir, origName),
 				Password:   password,
 				Verbose:    opts.Verbose,
+				Progress:   opts.Progress,
 			})
 			results[i].Error = mergeErr
 
@@ -347,23 +357,26 @@ func findShardDirs(root string) ([]string, error) {
 func anyShardEncrypted(root string) (bool, error) {
 	var found bool
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || found {
+		if err != nil {
 			return err
 		}
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".hrcx") {
-			f, err := os.Open(path)
-			if err != nil {
-				return nil
-			}
-			defer f.Close()
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".hrcx") {
+			return nil
+		}
 
-			header, err := shard.ReadHeader(f)
-			if err != nil {
-				return nil
-			}
-			if header.IsEncrypted() {
-				found = true
-			}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+
+		header, err := shard.ReadHeader(f)
+		if err != nil {
+			return nil
+		}
+		if header.IsEncrypted() {
+			found = true
+			return filepath.SkipAll
 		}
 		return nil
 	})
