@@ -1,16 +1,20 @@
 package pipeline
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/marmos91/horcrux/internal/crypto"
 	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/erasure"
+	"github.com/marmos91/horcrux/internal/manifest"
 	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/marmos91/horcrux/internal/shard"
+	"github.com/marmos91/horcrux/internal/version"
 )
 
 // SplitOptions configures the split operation.
@@ -25,23 +29,93 @@ type SplitOptions struct {
 	Progress     progress.Reporter
 }
 
+// SplitResult contains metadata collected during a split operation.
+type SplitResult struct {
+	OriginalName     string
+	OriginalSHA256   string
+	OriginalSize     uint64
+	DataShards       int
+	ParityShards     int
+	Encrypted        bool
+	ArgonTime        uint32
+	ArgonMemory      uint32
+	ArgonParallelism uint8
+	ShardFiles       []ShardFileInfo
+}
+
+// ShardFileInfo describes a shard file produced by a split.
+type ShardFileInfo struct {
+	Index    int
+	Type     string // "data" or "parity"
+	Filename string
+	Path     string
+	Size     uint64
+	SHA256   string
+}
+
+// BuildManifest constructs a Manifest from a SplitResult.
+func (r *SplitResult) BuildManifest() *manifest.Manifest {
+	m := &manifest.Manifest{
+		Version:        manifest.SchemaVersion,
+		HorcruxVersion: version.Version,
+		CreatedAt:      time.Now().UTC(),
+		Original: manifest.OriginalFile{
+			Filename: r.OriginalName,
+			Size:     r.OriginalSize,
+			SHA256:   r.OriginalSHA256,
+		},
+		Erasure: manifest.ErasureConfig{
+			DataShards:        r.DataShards,
+			ParityShards:      r.ParityShards,
+			TotalShards:       r.DataShards + r.ParityShards,
+			MinShardsRequired: r.DataShards,
+		},
+		Shards: make([]manifest.ShardEntry, len(r.ShardFiles)),
+	}
+
+	if r.Encrypted {
+		m.Encryption = manifest.EncryptionInfo{
+			Encrypted: true,
+			Algorithm: "AES-256-CTR",
+			KDF:       "Argon2id",
+			KDFParams: &manifest.KDFParams{
+				Time:        r.ArgonTime,
+				MemoryKB:    r.ArgonMemory,
+				Parallelism: r.ArgonParallelism,
+			},
+		}
+	}
+
+	for i, sf := range r.ShardFiles {
+		m.Shards[i] = manifest.ShardEntry{
+			Index:    sf.Index,
+			Type:     sf.Type,
+			Filename: sf.Filename,
+			Size:     sf.Size,
+			SHA256:   sf.SHA256,
+		}
+	}
+
+	return m
+}
+
 // Split splits a file into encrypted, erasure-coded shards.
-func Split(opts SplitOptions) (err error) {
+func Split(opts SplitOptions) (result *SplitResult, err error) {
 	inputFile, err := os.Open(opts.InputFile)
 	if err != nil {
-		return fmt.Errorf("opening input file: %w", err)
+		return nil, fmt.Errorf("opening input file: %w", err)
 	}
 	defer func() { _ = inputFile.Close() }()
 
 	inputInfo, err := inputFile.Stat()
 	if err != nil {
-		return fmt.Errorf("stat input file: %w", err)
+		return nil, fmt.Errorf("stat input file: %w", err)
 	}
 	originalSize := uint64(inputInfo.Size())
 	originalName := filepath.Base(opts.InputFile)
 
 	if err := os.MkdirAll(opts.OutputDir, 0o755); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
+		return nil, fmt.Errorf("creating output directory: %w", err)
 	}
 
 	var (
@@ -57,11 +131,11 @@ func Split(opts SplitOptions) (err error) {
 		kdfParams = crypto.DefaultKDFParams()
 		salt, err = crypto.GenerateSalt()
 		if err != nil {
-			return fmt.Errorf("generating salt: %w", err)
+			return nil, fmt.Errorf("generating salt: %w", err)
 		}
 		iv, err = crypto.GenerateIV()
 		if err != nil {
-			return fmt.Errorf("generating IV: %w", err)
+			return nil, fmt.Errorf("generating IV: %w", err)
 		}
 		key = crypto.DeriveKey(opts.Password, salt, kdfParams)
 		pwTag = crypto.PasswordTag(key)
@@ -101,7 +175,7 @@ func Split(opts SplitOptions) (err error) {
 			for j := range i {
 				_ = writers[j].Close()
 			}
-			return fmt.Errorf("creating shard %d: %w", i, err)
+			return nil, fmt.Errorf("creating shard %d: %w", i, err)
 		}
 		writers[i] = w
 	}
@@ -128,13 +202,16 @@ func Split(opts SplitOptions) (err error) {
 		prog.FinishFile(originalName, err)
 	}()
 
+	// Hash the original plaintext for the manifest
+	originalHash := sha256.New()
+
 	if originalSize == 0 {
 		if showVerbose {
 			fmt.Println("Empty file — writing headers only.")
 		}
 		for i, w := range writers {
 			if err := w.WriteTrailer(); err != nil {
-				return fmt.Errorf("writing trailer for shard %d: %w", i, err)
+				return nil, fmt.Errorf("writing trailer for shard %d: %w", i, err)
 			}
 		}
 	} else {
@@ -145,15 +222,17 @@ func Split(opts SplitOptions) (err error) {
 
 		enc, err := erasure.NewEncoder(opts.DataShards, opts.ParityShards)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
+		// Hash original plaintext before encryption
+		inputReader := io.TeeReader(inputFile, originalHash)
+
 		// Optionally encrypt, then split into data shards
-		var inputReader io.Reader = inputFile
 		if encrypt {
-			inputReader, err = crypto.NewEncryptReader(inputFile, key, iv)
+			inputReader, err = crypto.NewEncryptReader(inputReader, key, iv)
 			if err != nil {
-				return fmt.Errorf("creating encryption reader: %w", err)
+				return nil, fmt.Errorf("creating encryption reader: %w", err)
 			}
 		}
 
@@ -165,7 +244,7 @@ func Split(opts SplitOptions) (err error) {
 		}
 
 		if err := enc.Split(inputReader, dataWriters, int64(originalSize)); err != nil {
-			return fmt.Errorf("splitting data: %w", err)
+			return nil, fmt.Errorf("splitting data: %w", err)
 		}
 
 		// Seek data shard files back to payload start for parity computation
@@ -173,7 +252,7 @@ func Split(opts SplitOptions) (err error) {
 		for i := range opts.DataShards {
 			f := writers[i].File()
 			if _, err := f.Seek(shard.HeaderSize, io.SeekStart); err != nil {
-				return fmt.Errorf("seeking data shard %d: %w", i, err)
+				return nil, fmt.Errorf("seeking data shard %d: %w", i, err)
 			}
 			dataReaders[i] = io.LimitReader(f, perShard)
 		}
@@ -188,7 +267,7 @@ func Split(opts SplitOptions) (err error) {
 		}
 
 		if err := enc.Encode(dataReaders, parityWriters); err != nil {
-			return fmt.Errorf("encoding parity: %w", err)
+			return nil, fmt.Errorf("encoding parity: %w", err)
 		}
 
 		if showVerbose {
@@ -197,7 +276,7 @@ func Split(opts SplitOptions) (err error) {
 
 		for i, w := range writers {
 			if err := w.WriteTrailer(); err != nil {
-				return fmt.Errorf("writing trailer for shard %d: %w", i, err)
+				return nil, fmt.Errorf("writing trailer for shard %d: %w", i, err)
 			}
 		}
 	}
@@ -207,15 +286,50 @@ func Split(opts SplitOptions) (err error) {
 		writers[i] = nil
 	}
 
+	// Build shard file info by hashing each completed shard file
+	shardFiles := make([]ShardFileInfo, totalShards)
+	for i := range totalShards {
+		shardName := shardFilename(originalName, i)
+		shardPath := filepath.Join(opts.OutputDir, shardName)
+
+		fileHash, fileSize, err := HashFile(shardPath)
+		if err != nil {
+			return nil, fmt.Errorf("hashing shard %d: %w", i, err)
+		}
+
+		shardFiles[i] = ShardFileInfo{
+			Index:    i,
+			Type:     shardType(i, opts.DataShards),
+			Filename: shardName,
+			Path:     shardPath,
+			Size:     fileSize,
+			SHA256:   fileHash,
+		}
+	}
+
 	if showVerbose {
-		for i := range totalShards {
-			shardPath := filepath.Join(opts.OutputDir, shardFilename(originalName, i))
-			fmt.Printf("  Created: %s\n", shardPath)
+		for _, sf := range shardFiles {
+			fmt.Printf("  Created: %s\n", sf.Path)
 		}
 		fmt.Println("Split complete.")
 	}
 
-	return nil
+	result = &SplitResult{
+		OriginalName:   originalName,
+		OriginalSHA256: fmt.Sprintf("%x", originalHash.Sum(nil)),
+		OriginalSize:   originalSize,
+		DataShards:     opts.DataShards,
+		ParityShards:   opts.ParityShards,
+		Encrypted:      encrypt,
+		ShardFiles:     shardFiles,
+	}
+	if encrypt {
+		result.ArgonTime = kdfParams.Time
+		result.ArgonMemory = kdfParams.Memory
+		result.ArgonParallelism = kdfParams.Parallelism
+	}
+
+	return result, nil
 }
 
 // SplitDryRunResult holds the computed metadata for a dry-run split.
@@ -275,4 +389,28 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 
 func shardFilename(originalName string, index int) string {
 	return fmt.Sprintf("%s.%03d.hrcx", originalName, index)
+}
+
+// shardType returns "data" for indices below dataShards, "parity" otherwise.
+func shardType(index, dataShards int) string {
+	if index < dataShards {
+		return "data"
+	}
+	return "parity"
+}
+
+// HashFile computes the SHA-256 hash and size of an entire file.
+func HashFile(path string) (string, uint64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() { _ = f.Close() }()
+
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0, err
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)), uint64(n), nil
 }
