@@ -1,3 +1,4 @@
+// Package progress provides progress reporting for split/merge operations.
 package progress
 
 import (
