@@ -19,6 +19,7 @@ type Config struct {
 	NoEncrypt    *bool   `yaml:"no-encrypt,omitempty"`
 	Workers      *int    `yaml:"workers,omitempty"`
 	FailFast     *bool   `yaml:"fail-fast,omitempty"`
+	NoManifest   *bool   `yaml:"no-manifest,omitempty"`
 }
 
 // searchPaths returns the ordered list of config file paths to check.
@@ -96,22 +97,20 @@ func (c *Config) Validate() error {
 
 // DefaultConfig returns a Config with all fields populated with defaults.
 func DefaultConfig() *Config {
-	dataShards := 5
-	parityShards := 3
-	output := "."
-	noEncrypt := false
 	workers := runtime.NumCPU()
-	failFast := false
-
 	return &Config{
-		DataShards:   &dataShards,
-		ParityShards: &parityShards,
-		Output:       &output,
-		NoEncrypt:    &noEncrypt,
+		DataShards:   ptr(5),
+		ParityShards: ptr(3),
+		Output:       ptr("."),
+		NoEncrypt:    ptr(false),
 		Workers:      &workers,
-		FailFast:     &failFast,
+		FailFast:     ptr(false),
+		NoManifest:   ptr(false),
 	}
 }
+
+// ptr returns a pointer to v.
+func ptr[T any](v T) *T { return &v }
 
 // DefaultConfigPath returns the default config file path (~/.config/horcrux/config.yaml).
 func DefaultConfigPath() (string, error) {

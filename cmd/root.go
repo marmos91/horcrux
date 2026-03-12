@@ -105,37 +105,47 @@ func loadConfig(cmd *cobra.Command, args []string) error {
 // applyConfigToFlags sets flag defaults from config for any flag not explicitly
 // set on the command line. CLI flags always take precedence over config values.
 func applyConfigToFlags(cmd *cobra.Command, cfg *config.Config) error {
-	if cfg.DataShards != nil {
-		if err := setFlagDefault(cmd.Flags(), "data-shards", strconv.Itoa(*cfg.DataShards)); err != nil {
-			return err
-		}
+	flags := cmd.Flags()
+
+	overrides := []struct {
+		name  string
+		value *string
+	}{
+		{"data-shards", ptrItoa(cfg.DataShards)},
+		{"parity-shards", ptrItoa(cfg.ParityShards)},
+		{"output", cfg.Output},
+		{"no-encrypt", ptrFormatBool(cfg.NoEncrypt)},
+		{"workers", ptrItoa(cfg.Workers)},
+		{"fail-fast", ptrFormatBool(cfg.FailFast)},
+		{"no-manifest", ptrFormatBool(cfg.NoManifest)},
 	}
-	if cfg.ParityShards != nil {
-		if err := setFlagDefault(cmd.Flags(), "parity-shards", strconv.Itoa(*cfg.ParityShards)); err != nil {
-			return err
-		}
-	}
-	if cfg.Output != nil {
-		if err := setFlagDefault(cmd.Flags(), "output", *cfg.Output); err != nil {
-			return err
-		}
-	}
-	if cfg.NoEncrypt != nil {
-		if err := setFlagDefault(cmd.Flags(), "no-encrypt", strconv.FormatBool(*cfg.NoEncrypt)); err != nil {
-			return err
-		}
-	}
-	if cfg.Workers != nil {
-		if err := setFlagDefault(cmd.Flags(), "workers", strconv.Itoa(*cfg.Workers)); err != nil {
-			return err
-		}
-	}
-	if cfg.FailFast != nil {
-		if err := setFlagDefault(cmd.Flags(), "fail-fast", strconv.FormatBool(*cfg.FailFast)); err != nil {
-			return err
+
+	for _, o := range overrides {
+		if o.value != nil {
+			if err := setFlagDefault(flags, o.name, *o.value); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+// ptrItoa converts a *int to a *string via strconv.Itoa, returning nil for nil input.
+func ptrItoa(p *int) *string {
+	if p == nil {
+		return nil
+	}
+	s := strconv.Itoa(*p)
+	return &s
+}
+
+// ptrFormatBool converts a *bool to a *string via strconv.FormatBool, returning nil for nil input.
+func ptrFormatBool(p *bool) *string {
+	if p == nil {
+		return nil
+	}
+	s := strconv.FormatBool(*p)
+	return &s
 }
 
 // setFlagDefault sets a flag's value only if the flag exists on this command
