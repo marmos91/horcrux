@@ -20,3 +20,28 @@ func FormatSize(bytes uint64) string {
 		return fmt.Sprintf("%d B", bytes)
 	}
 }
+
+// BatchResult represents the outcome of a single file in a batch operation.
+type BatchResult struct {
+	File  string
+	Error error
+}
+
+// FormatBatchResults prints a summary table of batch operation results.
+func FormatBatchResults(results []BatchResult) {
+	succeeded := 0
+	failed := 0
+
+	for _, r := range results {
+		if r.Error == nil {
+			fmt.Printf("  OK    %s\n", r.File)
+			succeeded++
+		} else {
+			fmt.Printf("  FAIL  %s  (%s)\n", r.File, r.Error)
+			failed++
+		}
+	}
+
+	total := succeeded + failed
+	fmt.Printf("\n%d files processed: %d succeeded, %d failed\n", total, succeeded, failed)
+}

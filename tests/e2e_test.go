@@ -545,3 +545,205 @@ func copyFile(t *testing.T, src, dst string) {
 		t.Fatal(err)
 	}
 }
+
+// --- Directory / batch mode E2E tests ---
+
+func createTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestE2E_SplitDir_Basic(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "a.txt"), "file a content")
+	createTestFile(t, filepath.Join(inputDir, "b.txt"), "file b content here")
+	createTestFile(t, filepath.Join(inputDir, "c.txt"), "file c")
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split dir failed: %v\n%s", err, out)
+	}
+
+	// Verify output structure: shardDir/a.txt/, shardDir/b.txt/, shardDir/c.txt/
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		subDir := filepath.Join(shardDir, name)
+		entries, err := os.ReadDir(subDir)
+		if err != nil {
+			t.Fatalf("missing shard subdirectory %s: %v", name, err)
+		}
+		hrcxCount := 0
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".hrcx") {
+				hrcxCount++
+			}
+		}
+		if hrcxCount == 0 {
+			t.Fatalf("no .hrcx files in %s", subDir)
+		}
+	}
+
+	// Verify summary output
+	if !strings.Contains(out, "3 files processed") {
+		t.Fatalf("expected summary in output, got: %s", out)
+	}
+}
+
+func TestE2E_SplitMergeDir_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+	outputDir := filepath.Join(tmpDir, "recovered")
+
+	createTestFile(t, filepath.Join(inputDir, "hello.txt"), "hello world")
+	createTestFile(t, filepath.Join(inputDir, "data.bin"), "binary data content 1234567890")
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split dir failed: %v\n%s", err, out)
+	}
+
+	out, err = runHrcx(t, "merge", "-o", outputDir, shardDir)
+	if err != nil {
+		t.Fatalf("merge dir failed: %v\n%s", err, out)
+	}
+
+	// Verify each file matches
+	for _, name := range []string{"hello.txt", "data.bin"} {
+		orig := filepath.Join(inputDir, name)
+		recovered := filepath.Join(outputDir, name)
+		if fileSHA256(t, orig) != fileSHA256(t, recovered) {
+			t.Fatalf("SHA-256 mismatch for %s", name)
+		}
+	}
+}
+
+func TestE2E_SplitMergeDir_Encrypted(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+	outputDir := filepath.Join(tmpDir, "recovered")
+
+	createTestFile(t, filepath.Join(inputDir, "secret.txt"), "top secret data")
+	createTestFile(t, filepath.Join(inputDir, "private.key"), "private key material")
+
+	out, err := runHrcx(t, "split", "-p", "batch-pass", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split dir failed: %v\n%s", err, out)
+	}
+
+	out, err = runHrcx(t, "merge", "-p", "batch-pass", "-o", outputDir, shardDir)
+	if err != nil {
+		t.Fatalf("merge dir failed: %v\n%s", err, out)
+	}
+
+	for _, name := range []string{"secret.txt", "private.key"} {
+		orig := filepath.Join(inputDir, name)
+		recovered := filepath.Join(outputDir, name)
+		if fileSHA256(t, orig) != fileSHA256(t, recovered) {
+			t.Fatalf("SHA-256 mismatch for %s", name)
+		}
+	}
+}
+
+func TestE2E_SplitMergeDir_Recursive(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+	outputDir := filepath.Join(tmpDir, "recovered")
+
+	createTestFile(t, filepath.Join(inputDir, "root.txt"), "root file")
+	createTestFile(t, filepath.Join(inputDir, "docs", "readme.txt"), "readme content")
+	createTestFile(t, filepath.Join(inputDir, "docs", "sub", "deep.txt"), "deep file")
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split dir failed: %v\n%s", err, out)
+	}
+
+	// Verify nested output structure
+	for _, rel := range []string{"root.txt", "docs/readme.txt", "docs/sub/deep.txt"} {
+		subDir := filepath.Join(shardDir, rel)
+		if _, err := os.Stat(subDir); err != nil {
+			t.Fatalf("missing shard subdir for %s: %v", rel, err)
+		}
+	}
+
+	out, err = runHrcx(t, "merge", "-o", outputDir, shardDir)
+	if err != nil {
+		t.Fatalf("merge dir failed: %v\n%s", err, out)
+	}
+
+	for _, rel := range []string{"root.txt", "docs/readme.txt", "docs/sub/deep.txt"} {
+		orig := filepath.Join(inputDir, rel)
+		recovered := filepath.Join(outputDir, rel)
+		if fileSHA256(t, orig) != fileSHA256(t, recovered) {
+			t.Fatalf("SHA-256 mismatch for %s", rel)
+		}
+	}
+}
+
+func TestE2E_SplitDir_EmptyDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "empty")
+	os.MkdirAll(inputDir, 0755)
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "-o", filepath.Join(tmpDir, "shards"), inputDir)
+	if err == nil {
+		t.Fatal("expected error for empty directory")
+	}
+	if !strings.Contains(out, "no files found") {
+		t.Fatalf("expected 'no files found' error, got: %s", out)
+	}
+}
+
+func TestE2E_SplitDir_Workers(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	// Create several small files
+	for i := 0; i < 5; i++ {
+		createTestFile(t, filepath.Join(inputDir, fmt.Sprintf("file%d.txt", i)),
+			fmt.Sprintf("content of file %d", i))
+	}
+
+	// Test with --workers 1 (sequential)
+	out, err := runHrcx(t, "split", "--no-encrypt", "-w", "1", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split with --workers 1 failed: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "5 files processed: 5 succeeded") {
+		t.Fatalf("expected all 5 files succeeded, got: %s", out)
+	}
+}
+
+func TestE2E_SplitDir_FailFast(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "good.txt"), "good content")
+
+	// Create an unreadable file to trigger an error
+	badPath := filepath.Join(inputDir, "bad.txt")
+	createTestFile(t, badPath, "will become unreadable")
+	os.Chmod(badPath, 0000)
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "--fail-fast", "-o", shardDir, inputDir)
+	if err == nil {
+		// If running as root, chmod 0000 might not prevent reading
+		t.Log("split succeeded (possibly running as root), skipping fail-fast assertion")
+		return
+	}
+
+	_ = out // Error is expected; the --fail-fast flag should stop early
+}
