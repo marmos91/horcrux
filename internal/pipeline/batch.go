@@ -246,6 +246,7 @@ func DryRunSplitDir(opts SplitDirOptions) ([]SplitDryRunResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dry-run split %s: %w", rel, err)
 		}
+		r.RelPath = rel
 		results = append(results, *r)
 	}
 
@@ -288,6 +289,7 @@ func DryRunMergeDir(opts MergeDirOptions) ([]MergeDryRunResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("dry-run merge %s: %w", rel, err)
 		}
+		r.RelPath = rel
 		results = append(results, *r)
 	}
 

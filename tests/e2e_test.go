@@ -860,8 +860,12 @@ func TestE2E_MergeDryRun_MissingShards(t *testing.T) {
 	}
 
 	// Delete 2 shards (still recoverable: 6 of 8 remain, need 5)
-	os.Remove(filepath.Join(shardDir, "small.txt.003.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.007.hrcx"))
+	if err := os.Remove(filepath.Join(shardDir, "small.txt.003.hrcx")); err != nil {
+		t.Fatalf("failed to remove shard small.txt.003.hrcx: %v", err)
+	}
+	if err := os.Remove(filepath.Join(shardDir, "small.txt.007.hrcx")); err != nil {
+		t.Fatalf("failed to remove shard small.txt.007.hrcx: %v", err)
+	}
 
 	out, err := runHrcx(t, "merge", "--dry-run", shardDir)
 	if err != nil {
@@ -871,7 +875,7 @@ func TestE2E_MergeDryRun_MissingShards(t *testing.T) {
 	if !strings.Contains(out, "RECOVERABLE") {
 		t.Errorf("expected RECOVERABLE status\nGot: %s", out)
 	}
-	if !strings.Contains(out, "3") && !strings.Contains(out, "7") {
+	if !strings.Contains(out, "3") || !strings.Contains(out, "7") {
 		t.Errorf("expected missing indices to include 3 and 7\nGot: %s", out)
 	}
 }

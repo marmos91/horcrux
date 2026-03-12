@@ -51,8 +51,12 @@ func printSplitDirDryRun(results []pipeline.SplitDryRunResult) {
 
 	var totalInput, totalOutput uint64
 	for _, r := range results {
+		name := r.RelPath
+		if name == "" {
+			name = r.OriginalName
+		}
 		fmt.Printf("  %-30s %8s -> %d shards (%s total)\n",
-			r.OriginalName, display.FormatSize(r.OriginalSize), r.TotalShards, display.FormatSize(r.TotalOutputSize))
+			name, display.FormatSize(r.OriginalSize), r.TotalShards, display.FormatSize(r.TotalOutputSize))
 		totalInput += r.OriginalSize
 		totalOutput += r.TotalOutputSize
 	}
@@ -73,8 +77,12 @@ func printMergeDirDryRun(results []pipeline.MergeDryRunResult) {
 			recoverable++
 		}
 
+		name := r.RelPath
+		if name == "" {
+			name = r.OriginalName
+		}
 		fmt.Printf("  %-4s  %-30s  %d/%d shards valid  %s\n",
-			status, r.OriginalName, r.ShardsValid, r.TotalShards, display.FormatSize(r.OriginalSize))
+			status, name, r.ShardsValid, r.TotalShards, display.FormatSize(r.OriginalSize))
 	}
 
 	fmt.Println()

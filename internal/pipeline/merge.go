@@ -275,6 +275,7 @@ type MergeDryRunResult struct {
 	Recoverable         bool
 	NeedsReconstruction bool
 	OutputFile          string
+	RelPath             string // Relative shard dir path from input root (batch mode only)
 }
 
 // DryRunMerge analyzes shards and reports recoverability without writing files.
@@ -293,15 +294,24 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 	parityShards := int(ref.ParityShards)
 	totalShards := dataShards + parityShards
 
-	// Cross-validate headers (inconsistencies are non-fatal in dry-run)
+	// Cross-validate headers; exclude inconsistent shards
+	inconsistentIndices := make(map[int]struct{})
 	for _, s := range shards[1:] {
-		_ = validateConsistency(ref, s.Header, s.Path)
+		if err := validateConsistency(ref, s.Header, s.Path); err != nil {
+			inconsistentIndices[int(s.Header.ShardIndex)] = struct{}{}
+		}
 	}
 
-	// Build index map, detect duplicates
+	// Build index map, detect duplicates, skip inconsistent and out-of-range shards
 	indexMap := make(map[int]*shardInfo)
 	for i := range shards {
 		idx := int(shards[i].Header.ShardIndex)
+		if idx < 0 || idx >= totalShards {
+			continue
+		}
+		if _, inconsistent := inconsistentIndices[idx]; inconsistent {
+			continue
+		}
 		if _, exists := indexMap[idx]; exists {
 			continue
 		}

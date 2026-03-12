@@ -206,17 +206,18 @@ func Split(opts SplitOptions) error {
 
 // SplitDryRunResult holds the computed metadata for a dry-run split.
 type SplitDryRunResult struct {
-	OriginalName    string
-	OriginalSize    uint64
-	DataShards      int
-	ParityShards    int
-	TotalShards     int
-	PerShardPayload uint64
+	OriginalName     string
+	OriginalSize     uint64
+	DataShards       int
+	ParityShards     int
+	TotalShards      int
+	PerShardPayload  uint64
 	PerShardFileSize uint64
-	TotalOutputSize uint64
-	Encrypted       bool
-	OutputDir       string
-	ShardPaths      []string
+	TotalOutputSize  uint64
+	Encrypted        bool
+	OutputDir        string
+	ShardPaths       []string
+	RelPath          string // Relative path from input root (batch mode only)
 }
 
 // DryRunSplit computes what a split would produce without writing any files.
