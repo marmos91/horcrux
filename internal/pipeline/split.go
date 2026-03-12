@@ -26,7 +26,7 @@ type SplitOptions struct {
 }
 
 // Split splits a file into encrypted, erasure-coded shards.
-func Split(opts SplitOptions) error {
+func Split(opts SplitOptions) (err error) {
 	inputFile, err := os.Open(opts.InputFile)
 	if err != nil {
 		return fmt.Errorf("opening input file: %w", err)
@@ -123,6 +123,10 @@ func Split(opts SplitOptions) error {
 	}
 
 	fileProgress := prog.StartFile(originalName, int64(originalSize))
+	defer func() {
+		fileProgress.Finish()
+		prog.FinishFile(originalName, err)
+	}()
 
 	if originalSize == 0 {
 		if showVerbose {
@@ -136,7 +140,7 @@ func Split(opts SplitOptions) error {
 	} else {
 		dataWriters := make([]io.Writer, opts.DataShards)
 		for i := range opts.DataShards {
-			dataWriters[i] = fileProgress.WrapWriter(writers[i])
+			dataWriters[i] = writers[i]
 		}
 
 		enc, err := erasure.NewEncoder(opts.DataShards, opts.ParityShards)
@@ -152,6 +156,9 @@ func Split(opts SplitOptions) error {
 				return fmt.Errorf("creating encryption reader: %w", err)
 			}
 		}
+
+		// Wrap the input reader (not data writers) for accurate byte counting
+		inputReader = fileProgress.WrapReader(inputReader)
 
 		if showVerbose {
 			fmt.Println("Writing data shards...")
@@ -199,8 +206,6 @@ func Split(opts SplitOptions) error {
 		_ = writers[i].Close()
 		writers[i] = nil
 	}
-
-	prog.FinishFile(originalName, nil)
 
 	if showVerbose {
 		for i := range totalShards {

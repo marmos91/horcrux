@@ -40,7 +40,7 @@ type mergeFileEntry struct {
 }
 
 // Merge reconstructs a file from shards.
-func Merge(opts MergeOptions) error {
+func Merge(opts MergeOptions) (err error) {
 	shards, err := DiscoverShards(opts.ShardDir)
 	if err != nil {
 		return err
@@ -207,6 +207,10 @@ func Merge(opts MergeOptions) error {
 	originalSize := int64(ref.OriginalFileSize)
 
 	fileProgress := prog.StartFile(ref.OriginalFilename, originalSize)
+	defer func() {
+		fileProgress.Finish()
+		prog.FinishFile(ref.OriginalFilename, err)
+	}()
 
 	if originalSize == 0 {
 		if showVerbose {
@@ -246,7 +250,8 @@ func Merge(opts MergeOptions) error {
 				return fmt.Errorf("creating decrypt reader: %w", err)
 			}
 
-			if _, err := io.Copy(fileProgress.WrapWriter(outFile), decReader); err != nil {
+			// Wrap the reader side to preserve io.Copy's ReadFrom optimization
+			if _, err := io.Copy(outFile, fileProgress.WrapReader(decReader)); err != nil {
 				return fmt.Errorf("decrypting: %w", err)
 			}
 
@@ -254,13 +259,13 @@ func Merge(opts MergeOptions) error {
 				return fmt.Errorf("joining shards: %w", err)
 			}
 		} else {
+			// Wrap the output writer (no ReadFrom optimization available here
+			// since dec.Join writes to the writer directly)
 			if err := dec.Join(fileProgress.WrapWriter(outFile), dataReaders, originalSize); err != nil {
 				return fmt.Errorf("joining shards: %w", err)
 			}
 		}
 	}
-
-	prog.FinishFile(ref.OriginalFilename, nil)
 
 	if showVerbose {
 		fmt.Printf("Recovered: %s (%s)\n", outputPath, display.FormatSize(uint64(originalSize)))

@@ -26,6 +26,8 @@ type Reporter interface {
 type FileProgress interface {
 	WrapWriter(w io.Writer) io.Writer
 	WrapReader(r io.Reader) io.Reader
+	// Finish completes this file's progress bar.
+	Finish()
 }
 
 // NopReporter is a no-op implementation used when progress is disabled.
@@ -40,12 +42,12 @@ type nopFileProgress struct{}
 
 func (nopFileProgress) WrapWriter(w io.Writer) io.Writer { return w }
 func (nopFileProgress) WrapReader(r io.Reader) io.Reader { return r }
+func (nopFileProgress) Finish()                          {}
 
 // BarReporter displays a progress bar on stderr using schollz/progressbar.
 type BarReporter struct {
 	output     io.Writer
 	mu         sync.Mutex
-	bar        *progressbar.ProgressBar
 	totalFiles int
 	doneFiles  int
 }
@@ -70,7 +72,7 @@ func (r *BarReporter) StartFile(name string, totalBytes int64) FileProgress {
 		desc = fmt.Sprintf("[%d/%d] %s", r.doneFiles+1, r.totalFiles, name)
 	}
 
-	r.bar = progressbar.NewOptions64(
+	bar := progressbar.NewOptions64(
 		totalBytes,
 		progressbar.OptionSetWriter(r.output),
 		progressbar.OptionSetDescription(desc),
@@ -83,30 +85,19 @@ func (r *BarReporter) StartFile(name string, totalBytes int64) FileProgress {
 		}),
 	)
 
-	return &barFileProgress{bar: r.bar}
+	return &barFileProgress{bar: bar}
 }
 
 func (r *BarReporter) FinishFile(_ string, _ error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	if r.bar != nil {
-		_ = r.bar.Finish()
-		r.bar = nil
-	}
 	r.doneFiles++
 }
 
-func (r *BarReporter) Close() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.bar != nil {
-		_ = r.bar.Finish()
-		r.bar = nil
-	}
-}
+func (r *BarReporter) Close() {}
 
 // barFileProgress wraps a single progress bar for writer/reader tracking.
+// Each file gets its own bar instance, safe for concurrent use.
 type barFileProgress struct {
 	bar *progressbar.ProgressBar
 }
@@ -117,6 +108,10 @@ func (p *barFileProgress) WrapWriter(w io.Writer) io.Writer {
 
 func (p *barFileProgress) WrapReader(r io.Reader) io.Reader {
 	return &progressReader{inner: r, bar: p.bar}
+}
+
+func (p *barFileProgress) Finish() {
+	_ = p.bar.Finish()
 }
 
 // progressWriter counts bytes written and updates the progress bar.
