@@ -1,11 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"runtime"
 
-	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/pipeline"
+	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/spf13/cobra"
 )
 
@@ -46,15 +45,19 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		return runMergeSingleDryRun(shardDir)
 	}
 
+	prog, cleanup := newProgressReporter()
+	defer cleanup()
+
 	if pipeline.IsBatchMergeDir(shardDir) {
-		return runMergeDir(shardDir)
+		return runMergeDir(shardDir, prog)
 	}
 
 	opts := pipeline.MergeOptions{
 		ShardDir:   shardDir,
 		OutputFile: mergeOutput,
 		Password:   mergePassword,
-		Verbose:    verbose,
+		Verbose:    verbose && !quiet,
+		Progress:   prog,
 		PromptPassword: func() (string, error) {
 			return promptPassword("Enter decryption password: ")
 		},
@@ -87,14 +90,15 @@ func runMergeDirDryRun(inputDir string) error {
 	return nil
 }
 
-func runMergeDir(inputDir string) error {
+func runMergeDir(inputDir string, prog progress.Reporter) error {
 	results, err := pipeline.MergeDir(pipeline.MergeDirOptions{
 		InputDir:  inputDir,
 		OutputDir: mergeOutput,
 		Password:  mergePassword,
-		Verbose:   verbose,
+		Verbose:   verbose && !quiet,
 		Workers:   mergeWorkers,
 		FailFast:  mergeFailFast,
+		Progress:  prog,
 		PromptPassword: func() (string, error) {
 			return promptPassword("Enter decryption password: ")
 		},
@@ -102,17 +106,5 @@ func runMergeDir(inputDir string) error {
 	if err != nil && results == nil {
 		return err
 	}
-
-	batchResults := make([]display.BatchResult, len(results))
-	for i, r := range results {
-		batchResults[i] = display.BatchResult{File: r.File, Error: r.Error}
-	}
-	display.FormatBatchResults(batchResults)
-
-	for _, r := range results {
-		if r.Error != nil {
-			return fmt.Errorf("some files failed to merge")
-		}
-	}
-	return nil
+	return reportBatchResults(results, "merge")
 }
