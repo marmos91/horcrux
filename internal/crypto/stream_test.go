@@ -9,7 +9,7 @@ import (
 
 func TestEncryptDecryptRoundTrip(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
+	_, _ = rand.Read(key)
 	iv := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
 	plaintext := []byte("Hello, World! This is a test of the streaming encryption.")
@@ -45,13 +45,13 @@ func TestEncryptDecryptRoundTrip(t *testing.T) {
 
 func TestEncryptDecryptLargeData(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
+	_, _ = rand.Read(key)
 	iv := [16]byte{}
-	rand.Read(iv[:])
+	_, _ = rand.Read(iv[:])
 
 	// 1MB of random data
 	plaintext := make([]byte, 1<<20)
-	rand.Read(plaintext)
+	_, _ = rand.Read(plaintext)
 
 	encReader, err := NewEncryptReader(bytes.NewReader(plaintext), key, iv)
 	if err != nil {
@@ -78,7 +78,7 @@ func TestEncryptDecryptLargeData(t *testing.T) {
 
 func TestEncryptDecryptEmptyInput(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
+	_, _ = rand.Read(key)
 	iv := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 
 	encReader, err := NewEncryptReader(bytes.NewReader(nil), key, iv)
@@ -96,9 +96,9 @@ func TestEncryptDecryptEmptyInput(t *testing.T) {
 
 func TestEncryptWriterDecryptReader(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
+	_, _ = rand.Read(key)
 	iv := [16]byte{}
-	rand.Read(iv[:])
+	_, _ = rand.Read(iv[:])
 
 	plaintext := []byte("Testing writer/reader combo for streaming crypto")
 

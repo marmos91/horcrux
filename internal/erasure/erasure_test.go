@@ -10,7 +10,7 @@ import (
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
 	data := make([]byte, 10000)
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	dataShards := 5
 	parityShards := 3
@@ -111,7 +111,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 func TestReconstructTooManyMissing(t *testing.T) {
 	data := make([]byte, 5000)
-	rand.Read(data)
+	_, _ = rand.Read(data)
 
 	dataShards := 3
 	parityShards := 2
@@ -156,7 +156,7 @@ func TestReconstructTooManyMissing(t *testing.T) {
 		if i < parityShards+1 {
 			rsWriters[i] = &bytes.Buffer{}
 		} else {
-			allBytes := dataBuffers[0].Bytes() // dummy
+			var allBytes []byte
 			if i < dataShards {
 				allBytes = dataBuffers[i].Bytes()
 			} else {

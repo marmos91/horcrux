@@ -149,7 +149,7 @@ func ReadHeader(r io.Reader) (*Header, error) {
 
 	// Read filename (null-terminated)
 	fnBytes := buf[offsetFilename : offsetFilename+maxFilenameLen]
-	if idx := bytes.IndexByte(fnBytes[:], 0); idx >= 0 {
+	if idx := bytes.IndexByte(fnBytes, 0); idx >= 0 {
 		fnBytes = fnBytes[:idx]
 	}
 	h.OriginalFilename = string(fnBytes)

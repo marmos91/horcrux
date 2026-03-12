@@ -26,7 +26,7 @@ func OpenReader(path string) (*Reader, error) {
 
 	header, err := ReadHeader(f)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("reading shard %s: %w", path, err)
 	}
 

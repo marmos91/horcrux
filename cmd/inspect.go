@@ -67,7 +67,7 @@ func inspectFile(path string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	header, err := shard.ReadHeader(f)
 	if err != nil {
