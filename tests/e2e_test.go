@@ -3,6 +3,7 @@ package tests
 import (
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -456,6 +457,9 @@ func TestE2E_FilesWithDotsInName(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".manifest.json") {
+			continue // skip manifest file
+		}
 		if !strings.HasPrefix(e.Name(), "my.archive.tar.gz.") || !strings.HasSuffix(e.Name(), ".hrcx") {
 			t.Errorf("unexpected shard name: %s", e.Name())
 		}
@@ -951,4 +955,382 @@ func TestE2E_SplitDir_FailFast(t *testing.T) {
 	}
 
 	_ = out // Error is expected; the --fail-fast flag should stop early
+}
+
+// --- Manifest E2E tests ---
+
+func TestE2E_SplitGeneratesManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+		t.Fatal("manifest file not created")
+	}
+}
+
+func TestE2E_ManifestContents(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-n", "3", "-k", "2", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("reading manifest: %v", err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatalf("parsing manifest JSON: %v", err)
+	}
+
+	// Check top-level fields
+	if v, ok := m["version"].(string); !ok || v != "1.0.0" {
+		t.Errorf("expected version 1.0.0, got %v", m["version"])
+	}
+	if _, ok := m["created_at"].(string); !ok {
+		t.Error("missing created_at")
+	}
+
+	// Check original
+	orig, ok := m["original"].(map[string]any)
+	if !ok {
+		t.Fatal("missing original section")
+	}
+	if orig["filename"] != "small.txt" {
+		t.Errorf("expected filename small.txt, got %v", orig["filename"])
+	}
+	if _, ok := orig["sha256"].(string); !ok {
+		t.Error("missing original sha256")
+	}
+
+	// Check erasure
+	erasure, ok := m["erasure"].(map[string]any)
+	if !ok {
+		t.Fatal("missing erasure section")
+	}
+	if erasure["data_shards"] != float64(3) {
+		t.Errorf("expected 3 data shards, got %v", erasure["data_shards"])
+	}
+	if erasure["parity_shards"] != float64(2) {
+		t.Errorf("expected 2 parity shards, got %v", erasure["parity_shards"])
+	}
+	if erasure["total_shards"] != float64(5) {
+		t.Errorf("expected 5 total shards, got %v", erasure["total_shards"])
+	}
+	if erasure["min_shards_required"] != float64(3) {
+		t.Errorf("expected min_shards_required 3, got %v", erasure["min_shards_required"])
+	}
+
+	// Check encryption
+	enc, ok := m["encryption"].(map[string]any)
+	if !ok {
+		t.Fatal("missing encryption section")
+	}
+	if enc["encrypted"] != true {
+		t.Error("expected encrypted=true")
+	}
+	if enc["algorithm"] != "AES-256-CTR" {
+		t.Errorf("expected AES-256-CTR, got %v", enc["algorithm"])
+	}
+	if enc["kdf"] != "Argon2id" {
+		t.Errorf("expected Argon2id, got %v", enc["kdf"])
+	}
+
+	// Check shards
+	shards, ok := m["shards"].([]any)
+	if !ok {
+		t.Fatal("missing shards section")
+	}
+	if len(shards) != 5 {
+		t.Fatalf("expected 5 shards, got %d", len(shards))
+	}
+
+	// Verify shard checksums match actual files
+	for _, s := range shards {
+		shard := s.(map[string]any)
+		filename := shard["filename"].(string)
+		expectedHash := shard["sha256"].(string)
+		actualHash := fileSHA256(t, filepath.Join(shardDir, filename))
+		if actualHash != expectedHash {
+			t.Errorf("shard %s: hash mismatch (manifest=%s, actual=%s)", filename, expectedHash, actualHash)
+		}
+	}
+
+	// Verify first 3 are data, last 2 are parity
+	for i, s := range shards {
+		shard := s.(map[string]any)
+		expectedType := "data"
+		if i >= 3 {
+			expectedType = "parity"
+		}
+		if shard["type"] != expectedType {
+			t.Errorf("shard %d: expected type %s, got %v", i, expectedType, shard["type"])
+		}
+	}
+}
+
+func TestE2E_MergeWithManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+
+	out, err := runHrcx(t, "merge", "--manifest", manifestPath, "-p", "test123", "-o", output, shardDir)
+	if err != nil {
+		t.Fatalf("merge with manifest failed: %v\n%s", err, out)
+	}
+
+	// Should print validation output
+	if !strings.Contains(out, "[OK]") {
+		t.Errorf("expected shard validation output with [OK], got: %s", out)
+	}
+	if !strings.Contains(out, "Verification: OK") {
+		t.Errorf("expected verification OK, got: %s", out)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch")
+	}
+}
+
+func TestE2E_ManifestAnnotate(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+
+	// Annotate shard 0
+	out, err := runHrcx(t, "manifest", "annotate", manifestPath, "0", "USB drive A")
+	if err != nil {
+		t.Fatalf("annotate failed: %v\n%s", err, out)
+	}
+
+	// Verify the annotation was saved
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	shards := m["shards"].([]any)
+	shard0 := shards[0].(map[string]any)
+	if shard0["location"] != "USB drive A" {
+		t.Errorf("expected location 'USB drive A', got %v", shard0["location"])
+	}
+
+	// Annotate shard 2 with different location
+	out, err = runHrcx(t, "manifest", "annotate", manifestPath, "2", "cloud backup")
+	if err != nil {
+		t.Fatalf("annotate shard 2 failed: %v\n%s", err, out)
+	}
+
+	// Verify both annotations exist
+	data, err = os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	shards = m["shards"].([]any)
+	shard0 = shards[0].(map[string]any)
+	shard2 := shards[2].(map[string]any)
+	if shard0["location"] != "USB drive A" {
+		t.Errorf("shard 0 location lost after annotating shard 2")
+	}
+	if shard2["location"] != "cloud backup" {
+		t.Errorf("expected shard 2 location 'cloud backup', got %v", shard2["location"])
+	}
+}
+
+func TestE2E_SplitNoManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "--no-encrypt", "--no-manifest", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+	if _, err := os.Stat(manifestPath); !os.IsNotExist(err) {
+		t.Fatal("manifest file should not be created with --no-manifest")
+	}
+
+	// Verify shards still exist
+	entries, err := os.ReadDir(shardDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hrcxCount := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".hrcx") {
+			hrcxCount++
+		}
+	}
+	if hrcxCount == 0 {
+		t.Fatal("no .hrcx files created")
+	}
+}
+
+func TestE2E_MergeManifestDetectsCorruption(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-n", "5", "-k", "3", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+
+	// Corrupt one shard's payload (flip bytes after header)
+	shardPath := filepath.Join(shardDir, "small.txt.002.hrcx")
+	f, err := os.OpenFile(shardPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.Seek(260, io.SeekStart)
+	_, _ = f.Write([]byte{0xFF, 0xFF, 0xFF})
+	_ = f.Close()
+
+	out, err := runHrcx(t, "merge", "--manifest", manifestPath, "-p", "test123", "-o", output, shardDir)
+	if err != nil {
+		// Merge might still succeed via reconstruction, but manifest should show corruption
+		t.Logf("merge output: %s", out)
+	}
+
+	// The output should contain [CORRUPT] for the corrupted shard
+	if !strings.Contains(out, "[CORRUPT]") {
+		t.Errorf("expected [CORRUPT] in manifest validation output, got: %s", out)
+	}
+}
+
+func TestE2E_MergeManifestOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+
+	// Merge using only --manifest flag (no positional arg for shard dir)
+	out, err := runHrcx(t, "merge", "--manifest", manifestPath, "-p", "test123", "-o", output)
+	if err != nil {
+		t.Fatalf("merge with manifest-only failed: %v\n%s", err, out)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch")
+	}
+}
+
+func TestE2E_SplitDirGeneratesManifests(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "a.txt"), "file a content")
+	createTestFile(t, filepath.Join(inputDir, "b.txt"), "file b content here")
+
+	out, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir)
+	if err != nil {
+		t.Fatalf("split dir failed: %v\n%s", err, out)
+	}
+
+	// Each subdirectory should have its own manifest
+	for _, name := range []string{"a.txt", "b.txt"} {
+		manifestPath := filepath.Join(shardDir, name, name+".manifest.json")
+		if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
+			t.Fatalf("missing manifest for %s at %s", name, manifestPath)
+		}
+	}
+}
+
+func TestE2E_ManifestNoEncryption(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	manifestPath := filepath.Join(shardDir, "small.txt.manifest.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+
+	enc := m["encryption"].(map[string]any)
+	if enc["encrypted"] != false {
+		t.Error("expected encrypted=false for --no-encrypt split")
+	}
+	if _, ok := enc["algorithm"]; ok {
+		t.Error("algorithm should be omitted when not encrypted")
+	}
+}
+
+func TestE2E_SplitDryRunShowsManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	out, err := runHrcx(t, "split", "--dry-run", "--no-encrypt", "-o", shardDir, input)
+	if err != nil {
+		t.Fatalf("split --dry-run failed: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "Manifest:     enabled") {
+		t.Errorf("expected 'Manifest:     enabled' in dry-run output, got: %s", out)
+	}
+}
+
+func TestE2E_SplitDryRunNoManifest(t *testing.T) {
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	out, err := runHrcx(t, "split", "--dry-run", "--no-encrypt", "--no-manifest", "-o", shardDir, input)
+	if err != nil {
+		t.Fatalf("split --dry-run --no-manifest failed: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "Manifest:     disabled") {
+		t.Errorf("expected 'Manifest:     disabled' in dry-run output, got: %s", out)
+	}
 }
