@@ -103,4 +103,3 @@ func inspectFile(path string) error {
 
 	return nil
 }
-

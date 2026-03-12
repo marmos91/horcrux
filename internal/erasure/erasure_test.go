@@ -207,4 +207,3 @@ func TestSmallDataSingleBlock(t *testing.T) {
 		t.Fatalf("got %q, want %q", output.String(), string(data))
 	}
 }
-

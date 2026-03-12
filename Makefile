@@ -2,7 +2,7 @@ BINARY_NAME=hrcx
 VERSION?=0.1.0
 LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
 
-.PHONY: build test lint clean cross-compile
+.PHONY: build test lint clean cross-compile fmt fmt-check setup-hooks
 
 build:
 	go build $(LDFLAGS) -o $(BINARY_NAME) .
@@ -23,7 +23,27 @@ bench:
 	go test ./tests/ -bench . -benchmem -benchtime 3x -timeout 30m
 
 lint:
-	go vet ./...
+	@if command -v golangci-lint &>/dev/null; then \
+		golangci-lint run ./...; \
+	else \
+		echo "golangci-lint not found, falling back to go vet"; \
+		go vet ./...; \
+	fi
+
+fmt:
+	gofmt -w .
+
+fmt-check:
+	@unformatted=$$(gofmt -l .); \
+	if [ -n "$$unformatted" ]; then \
+		echo "Unformatted files:"; \
+		echo "$$unformatted"; \
+		exit 1; \
+	fi
+
+setup-hooks:
+	git config core.hooksPath .githooks
+	@echo "Git hooks path set to .githooks"
 
 clean:
 	rm -f $(BINARY_NAME)

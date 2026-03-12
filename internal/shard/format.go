@@ -37,11 +37,11 @@ const (
 )
 
 var (
-	ErrInvalidMagic      = errors.New("invalid magic bytes")
-	ErrUnsupportedVer    = errors.New("unsupported format version")
-	ErrHeaderChecksum    = errors.New("header checksum mismatch")
-	ErrHeaderTooShort    = errors.New("header too short")
-	ErrFilenameTooLong   = fmt.Errorf("filename exceeds %d bytes", maxFilenameLen)
+	ErrInvalidMagic    = errors.New("invalid magic bytes")
+	ErrUnsupportedVer  = errors.New("unsupported format version")
+	ErrHeaderChecksum  = errors.New("header checksum mismatch")
+	ErrHeaderTooShort  = errors.New("header too short")
+	ErrFilenameTooLong = fmt.Errorf("filename exceeds %d bytes", maxFilenameLen)
 )
 
 type Header struct {

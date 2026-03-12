@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running pre-commit checks..."
+
+# Check formatting on staged .go files
+staged_go_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.go$' || true)
+if [ -n "$staged_go_files" ]; then
+    unformatted=$(echo "$staged_go_files" | xargs gofmt -l 2>/dev/null || true)
+    if [ -n "$unformatted" ]; then
+        echo "ERROR: Unformatted Go files:"
+        echo "$unformatted"
+        echo "Run 'gofmt -w .' to fix."
+        exit 1
+    fi
+fi
+
+# Run go vet
+echo "Running go vet..."
+go vet ./...
+
+# Run golangci-lint if available (non-blocking)
+if command -v golangci-lint &>/dev/null; then
+    echo "Running golangci-lint..."
+    golangci-lint run ./...
+else
+    echo "WARNING: golangci-lint not installed, skipping. Install: https://golangci-lint.run/welcome/install/"
+fi
+
+echo "Pre-commit checks passed."

@@ -9,10 +9,10 @@ import (
 
 // Writer writes a shard file: header + payload + trailer (payload SHA-256).
 type Writer struct {
-	file       *os.File
-	header     *Header
+	file        *os.File
+	header      *Header
 	payloadHash hash.Hash
-	written    int64
+	written     int64
 }
 
 // CreateWriter creates a shard file and writes the header.
