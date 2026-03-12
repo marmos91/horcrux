@@ -1,0 +1,2 @@
+This file has a Unicode filename for testing multibyte UTF-8 name preservation.
+日本語テスト。ファイル名にユニコードを使用しています。
