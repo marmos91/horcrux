@@ -132,13 +132,13 @@ func Merge(opts MergeOptions) error {
 		}
 
 		if err := reader.VerifyPayload(); err != nil {
-			reader.Close()
+			_ = reader.Close()
 			if showVerbose {
 				fmt.Fprintf(os.Stderr, "Warning: shard %d has corrupt payload, excluding\n", idx)
 			}
 			continue
 		}
-		reader.Close()
+		_ = reader.Close()
 		validMap[idx] = s
 	}
 
@@ -161,9 +161,9 @@ func Merge(opts MergeOptions) error {
 	defer func() {
 		for _, fe := range shardFiles {
 			if fe != nil {
-				fe.file.Close()
+				_ = fe.file.Close()
 				if fe.tempFile {
-					os.Remove(fe.file.Name())
+					_ = os.Remove(fe.file.Name())
 				}
 			}
 		}
@@ -202,7 +202,7 @@ func Merge(opts MergeOptions) error {
 	if err != nil {
 		return fmt.Errorf("creating output file: %w", err)
 	}
-	defer outFile.Close()
+	defer func() { _ = outFile.Close() }()
 
 	originalSize := int64(ref.OriginalFileSize)
 
@@ -236,13 +236,13 @@ func Merge(opts MergeOptions) error {
 
 			errCh := make(chan error, 1)
 			go func() {
-				defer pw.Close()
+				defer func() { _ = pw.Close() }()
 				errCh <- dec.Join(pw, dataReaders, originalSize)
 			}()
 
 			decReader, err := crypto.NewDecryptReader(pr, key, ref.IV)
 			if err != nil {
-				pr.Close()
+				_ = pr.Close()
 				return fmt.Errorf("creating decrypt reader: %w", err)
 			}
 
@@ -338,11 +338,11 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 		}
 
 		if err := reader.VerifyPayload(); err != nil {
-			reader.Close()
+			_ = reader.Close()
 			corruptIndices = append(corruptIndices, idx)
 			continue
 		}
-		reader.Close()
+		_ = reader.Close()
 		validMap[idx] = s
 	}
 
@@ -412,7 +412,7 @@ func DiscoverShards(dir string) ([]shardInfo, error) {
 		}
 
 		header, err := shard.ReadHeader(f)
-		f.Close()
+		_ = f.Close()
 		if err != nil {
 			if errors.Is(err, shard.ErrHeaderChecksum) && header != nil {
 				shards = append(shards, shardInfo{Path: path, Header: header})

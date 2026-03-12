@@ -21,17 +21,19 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "failed to create temp dir: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tmpDir)
 
 	binaryPath = filepath.Join(tmpDir, "hrcx")
 	cmd := exec.Command("go", "build", "-o", binaryPath, "..")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		_ = os.RemoveAll(tmpDir)
 		fmt.Fprintf(os.Stderr, "failed to build binary: %v\n", err)
 		os.Exit(1)
 	}
 
-	os.Exit(m.Run())
+	code := m.Run()
+	_ = os.RemoveAll(tmpDir)
+	os.Exit(code)
 }
 
 func runHrcx(t *testing.T, args ...string) (string, error) {
@@ -47,7 +49,7 @@ func fileSHA256(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatalf("opening %s: %v", path, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		t.Fatalf("hashing %s: %v", path, err)
@@ -61,7 +63,7 @@ func createRandomFile(t *testing.T, path string, size int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := io.CopyN(f, rand.Reader, size); err != nil {
 		t.Fatal(err)
 	}
@@ -251,9 +253,9 @@ func TestE2E_MergeWithMissingShards(t *testing.T) {
 	}
 
 	// Delete exactly K=3 shards
-	os.Remove(filepath.Join(shardDir, "small.txt.001.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.004.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.006.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.001.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.004.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.006.hrcx"))
 
 	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, shardDir); err != nil {
 		t.Fatalf("merge with missing shards failed: %v", err)
@@ -281,9 +283,9 @@ func TestE2E_MergeWithCorruptShard(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Flip a byte in the payload area (after 256-byte header)
-	f.Seek(260, io.SeekStart)
-	f.Write([]byte{0xFF, 0xFF, 0xFF})
-	f.Close()
+	_, _ = f.Seek(260, io.SeekStart)
+	_, _ = f.Write([]byte{0xFF, 0xFF, 0xFF})
+	_ = f.Close()
 
 	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, shardDir); err != nil {
 		t.Fatalf("merge with corrupt shard failed: %v", err)
@@ -310,9 +312,9 @@ func TestE2E_MergeWithCorruptHeader(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Seek(0, io.SeekStart)
-	f.Write([]byte("DEAD"))
-	f.Close()
+	_, _ = f.Seek(0, io.SeekStart)
+	_, _ = f.Write([]byte("DEAD"))
+	_ = f.Close()
 
 	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, shardDir); err != nil {
 		t.Fatalf("merge with corrupt header failed: %v", err)
@@ -333,10 +335,10 @@ func TestE2E_MergeInsufficientShards(t *testing.T) {
 	}
 
 	// Delete K+1 = 4 shards (only 4 remain, need 5)
-	os.Remove(filepath.Join(shardDir, "small.txt.001.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.003.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.005.hrcx"))
-	os.Remove(filepath.Join(shardDir, "small.txt.007.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.001.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.003.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.005.hrcx"))
+	_ = os.Remove(filepath.Join(shardDir, "small.txt.007.hrcx"))
 
 	out, err := runHrcx(t, "merge", "-p", "test123", "-o", filepath.Join(tmpDir, "out.txt"), shardDir)
 	if err == nil {
@@ -439,7 +441,7 @@ func TestE2E_OutputDirCreation(t *testing.T) {
 func TestE2E_FilesWithDotsInName(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := filepath.Join(tmpDir, "my.archive.tar.gz")
-	os.WriteFile(input, []byte("fake tar.gz content for testing"), 0644)
+	_ = os.WriteFile(input, []byte("fake tar.gz content for testing"), 0644)
 
 	shardDir := filepath.Join(tmpDir, "shards")
 	output := filepath.Join(tmpDir, "recovered.tar.gz")
@@ -506,7 +508,7 @@ func TestE2E_MergeMixedShards(t *testing.T) {
 
 	// Mix shards from both splits into one dir
 	mixDir := filepath.Join(tmpDir, "mixed")
-	os.MkdirAll(mixDir, 0755)
+	_ = os.MkdirAll(mixDir, 0755)
 
 	// Copy shard 0 from split1 and shard 1 from split2
 	copyFile(t, filepath.Join(dir1, "small.txt.000.hrcx"), filepath.Join(mixDir, "small.txt.000.hrcx"))
@@ -693,7 +695,7 @@ func TestE2E_SplitMergeDir_Recursive(t *testing.T) {
 func TestE2E_SplitDir_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	inputDir := filepath.Join(tmpDir, "empty")
-	os.MkdirAll(inputDir, 0755)
+	_ = os.MkdirAll(inputDir, 0755)
 
 	out, err := runHrcx(t, "split", "--no-encrypt", "-o", filepath.Join(tmpDir, "shards"), inputDir)
 	if err == nil {
@@ -939,7 +941,7 @@ func TestE2E_SplitDir_FailFast(t *testing.T) {
 	// Create an unreadable file to trigger an error
 	badPath := filepath.Join(inputDir, "bad.txt")
 	createTestFile(t, badPath, "will become unreadable")
-	os.Chmod(badPath, 0000)
+	_ = os.Chmod(badPath, 0000)
 
 	out, err := runHrcx(t, "split", "--no-encrypt", "--fail-fast", "-o", shardDir, inputDir)
 	if err == nil {

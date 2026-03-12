@@ -368,7 +368,7 @@ func anyShardEncrypted(root string) (bool, error) {
 		if err != nil {
 			return nil
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 
 		header, err := shard.ReadHeader(f)
 		if err != nil {
@@ -397,7 +397,7 @@ func peekOriginalFilename(dir string) (string, error) {
 				continue
 			}
 			header, err := shard.ReadHeader(f)
-			f.Close()
+			_ = f.Close()
 			if err != nil {
 				continue
 			}

@@ -24,12 +24,12 @@ func CreateWriter(path string, header *Header) (*Writer, error) {
 
 	headerBytes, err := header.Marshal()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
 	if _, err := f.Write(headerBytes[:]); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 
@@ -59,7 +59,7 @@ func (w *Writer) File() *os.File {
 func (w *Writer) Close() error {
 	checksum := w.payloadHash.Sum(nil)
 	if _, err := w.file.Write(checksum); err != nil {
-		w.file.Close()
+		_ = w.file.Close()
 		return err
 	}
 	return w.file.Close()
