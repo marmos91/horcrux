@@ -1,0 +1,18 @@
+# Binaries
+hrcx
+*.exe
+dist/
+
+# Test artifacts
+tests/testdata/medium.bin
+*.hrcx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
