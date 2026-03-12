@@ -183,7 +183,7 @@ func TestStress_ReconstructHeavy(t *testing.T) {
 
 	// Delete all 10 parity shards (keeping only the 5 data shards)
 	for i := 5; i < 15; i++ {
-		os.Remove(filepath.Join(shardDir, fmt.Sprintf("100mb.bin.%03d.hrcx", i)))
+		_ = os.Remove(filepath.Join(shardDir, fmt.Sprintf("100mb.bin.%03d.hrcx", i)))
 	}
 
 	if _, err := runHrcx(t, "merge", "-p", "stress", "-o", output, shardDir); err != nil {
@@ -265,12 +265,12 @@ func TestStress_ConcurrentSplits(t *testing.T) {
 			defer wg.Done()
 
 			input := filepath.Join(tmpDir, fmt.Sprintf("file_%d.bin", idx))
-			createRandomFileNoHelper(input, 10*1024*1024)
+			_ = createRandomFileNoHelper(input, 10*1024*1024)
 
 			shardDir := filepath.Join(tmpDir, fmt.Sprintf("shards_%d", idx))
 			output := filepath.Join(tmpDir, fmt.Sprintf("recovered_%d.bin", idx))
 
-			cmd := fmt.Sprintf("split")
+			cmd := "split"
 			if _, err := runHrcxDirect(binaryPath, cmd, "--no-encrypt", "-o", shardDir, input); err != nil {
 				errCh <- fmt.Errorf("split %d failed: %w", idx, err)
 				return
@@ -302,7 +302,7 @@ func createRandomFileNoHelper(path string, size int64) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = io.CopyN(f, rand.Reader, size)
 	return err
 }
@@ -312,9 +312,9 @@ func hashFile(path string) string {
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
-	io.Copy(h, f)
+	_, _ = io.Copy(h, f)
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 

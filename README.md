@@ -11,6 +11,7 @@ Split a file into N data + K parity shards. Lose up to K shards and still recove
 - **Fast wrong-password detection** via HMAC verification tag (no need to process the entire file)
 - **Streaming pipeline** with constant memory usage (~15 MB regardless of file size)
 - **Corruption tolerance** -- corrupt shards are automatically detected and excluded during reconstruction
+- **Config file support** -- set defaults via `.hrcxrc` or `~/.config/horcrux/config.yaml`
 - **Single binary**, no dependencies at runtime
 
 ## Installation
@@ -97,6 +98,41 @@ Shard: secret.pdf.003.hrcx
 ├── Encrypted:         yes
 └── Header checksum:   OK
 ```
+
+### Configuration file
+
+Horcrux supports an optional YAML config file to set default values for CLI flags. Settings in the config file are overridden by explicit CLI flags.
+
+**Search order** (first found wins):
+1. `./.hrcxrc` (current directory)
+2. `~/.config/horcrux/config.yaml`
+3. `~/.hrcxrc`
+
+**Precedence** (highest to lowest): CLI flags > config file > built-in defaults.
+
+```bash
+# Create a default config file at ~/.config/horcrux/config.yaml
+hrcx config init
+
+# Overwrite an existing config file
+hrcx config init --force
+
+# Display the active configuration and its source
+hrcx config show
+```
+
+Example config file (`.hrcxrc` or `config.yaml`):
+
+```yaml
+data-shards: 10
+parity-shards: 4
+output: "./shards"
+no-encrypt: false
+workers: 8
+fail-fast: true
+```
+
+All fields are optional -- only the settings you include will override the defaults.
 
 ## How it works
 

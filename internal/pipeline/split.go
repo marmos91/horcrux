@@ -29,7 +29,7 @@ func Split(opts SplitOptions) error {
 	if err != nil {
 		return fmt.Errorf("opening input file: %w", err)
 	}
-	defer inputFile.Close()
+	defer func() { _ = inputFile.Close() }()
 
 	inputInfo, err := inputFile.Stat()
 	if err != nil {
@@ -97,7 +97,7 @@ func Split(opts SplitOptions) error {
 		w, err := shard.CreateWriter(shardPath, hdr)
 		if err != nil {
 			for j := 0; j < i; j++ {
-				writers[j].Close()
+				_ = writers[j].Close()
 			}
 			return fmt.Errorf("creating shard %d: %w", i, err)
 		}
@@ -107,7 +107,7 @@ func Split(opts SplitOptions) error {
 	defer func() {
 		for _, w := range writers {
 			if w != nil {
-				w.Close()
+				_ = w.Close()
 			}
 		}
 	}()
@@ -189,7 +189,7 @@ func Split(opts SplitOptions) error {
 	}
 
 	for i := range writers {
-		writers[i].Close()
+		_ = writers[i].Close()
 		writers[i] = nil
 	}
 
@@ -245,17 +245,17 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 	}
 
 	return &SplitDryRunResult{
-		OriginalName:    originalName,
-		OriginalSize:    originalSize,
-		DataShards:      opts.DataShards,
-		ParityShards:    opts.ParityShards,
-		TotalShards:     totalShards,
-		PerShardPayload: perShardPayload,
+		OriginalName:     originalName,
+		OriginalSize:     originalSize,
+		DataShards:       opts.DataShards,
+		ParityShards:     opts.ParityShards,
+		TotalShards:      totalShards,
+		PerShardPayload:  perShardPayload,
 		PerShardFileSize: perShardFileSize,
-		TotalOutputSize: totalOutputSize,
-		Encrypted:       encrypted,
-		OutputDir:       opts.OutputDir,
-		ShardPaths:      shardPaths,
+		TotalOutputSize:  totalOutputSize,
+		Encrypted:        encrypted,
+		OutputDir:        opts.OutputDir,
+		ShardPaths:       shardPaths,
 	}, nil
 }
 

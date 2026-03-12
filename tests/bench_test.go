@@ -12,7 +12,7 @@ func benchmarkSplit(b *testing.B, size int64, encrypt bool) {
 	b.Helper()
 	tmpDir := b.TempDir()
 	input := filepath.Join(tmpDir, "bench.bin")
-	createRandomFileNoHelper(input, size)
+	_ = createRandomFileNoHelper(input, size)
 
 	b.SetBytes(size)
 	b.ResetTimer()
@@ -38,7 +38,7 @@ func benchmarkMerge(b *testing.B, size int64, encrypt bool) {
 	b.Helper()
 	tmpDir := b.TempDir()
 	input := filepath.Join(tmpDir, "bench.bin")
-	createRandomFileNoHelper(input, size)
+	_ = createRandomFileNoHelper(input, size)
 
 	shardDir := filepath.Join(tmpDir, "shards")
 	splitArgs := []string{"split", "-o", shardDir}
@@ -69,7 +69,7 @@ func benchmarkMerge(b *testing.B, size int64, encrypt bool) {
 		if out, err := cmd.CombinedOutput(); err != nil {
 			b.Fatalf("merge failed: %v\n%s", err, out)
 		}
-		os.Remove(output)
+		_ = os.Remove(output)
 	}
 }
 
@@ -84,7 +84,7 @@ func BenchmarkMerge_100MB(b *testing.B) { benchmarkMerge(b, 100<<20, true) }
 func BenchmarkSplitMerge_Encrypted_100MB(b *testing.B) {
 	tmpDir := b.TempDir()
 	input := filepath.Join(tmpDir, "bench.bin")
-	createRandomFileNoHelper(input, 100<<20)
+	_ = createRandomFileNoHelper(input, 100<<20)
 
 	b.SetBytes(100 << 20)
 	b.ResetTimer()
@@ -103,15 +103,15 @@ func BenchmarkSplitMerge_Encrypted_100MB(b *testing.B) {
 			b.Fatalf("merge failed: %v\n%s", err, out)
 		}
 
-		os.Remove(output)
-		os.RemoveAll(shardDir)
+		_ = os.Remove(output)
+		_ = os.RemoveAll(shardDir)
 	}
 }
 
 func BenchmarkSplitMerge_NoEncrypt_100MB(b *testing.B) {
 	tmpDir := b.TempDir()
 	input := filepath.Join(tmpDir, "bench.bin")
-	createRandomFileNoHelper(input, 100<<20)
+	_ = createRandomFileNoHelper(input, 100<<20)
 
 	b.SetBytes(100 << 20)
 	b.ResetTimer()
@@ -130,8 +130,8 @@ func BenchmarkSplitMerge_NoEncrypt_100MB(b *testing.B) {
 			b.Fatalf("merge failed: %v\n%s", err, out)
 		}
 
-		os.Remove(output)
-		os.RemoveAll(shardDir)
+		_ = os.Remove(output)
+		_ = os.RemoveAll(shardDir)
 	}
 }
 
@@ -147,7 +147,7 @@ func benchmarkReconstruct(b *testing.B, size int64, missingCount int) {
 	b.Helper()
 	tmpDir := b.TempDir()
 	input := filepath.Join(tmpDir, "bench.bin")
-	createRandomFileNoHelper(input, size)
+	_ = createRandomFileNoHelper(input, size)
 
 	b.SetBytes(size)
 	b.ResetTimer()
@@ -163,7 +163,7 @@ func benchmarkReconstruct(b *testing.B, size int64, missingCount int) {
 
 		// Delete missingCount shards
 		for j := 0; j < missingCount; j++ {
-			os.Remove(filepath.Join(shardDir, fmt.Sprintf("bench.bin.%03d.hrcx", j)))
+			_ = os.Remove(filepath.Join(shardDir, fmt.Sprintf("bench.bin.%03d.hrcx", j)))
 		}
 
 		cmd = execCommand(binaryPath, "merge", "-o", output, shardDir)
@@ -171,8 +171,8 @@ func benchmarkReconstruct(b *testing.B, size int64, missingCount int) {
 			b.Fatalf("merge failed: %v\n%s", err, out)
 		}
 
-		os.Remove(output)
-		os.RemoveAll(shardDir)
+		_ = os.Remove(output)
+		_ = os.RemoveAll(shardDir)
 	}
 }
 
