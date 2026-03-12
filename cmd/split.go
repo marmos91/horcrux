@@ -5,8 +5,8 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/pipeline"
+	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -93,8 +93,11 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	prog, cleanup := newProgressReporter()
+	defer cleanup()
+
 	if info.IsDir() {
-		return runSplitDir(input, pwd)
+		return runSplitDir(input, pwd, prog)
 	}
 
 	return pipeline.Split(pipeline.SplitOptions{
@@ -104,11 +107,12 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		ParityShards: parityShards,
 		Password:     pwd,
 		NoEncrypt:    noEncrypt,
-		Verbose:      verbose,
+		Verbose:      verbose && !quiet,
+		Progress:     prog,
 	})
 }
 
-func runSplitDir(inputDir, pwd string) error {
+func runSplitDir(inputDir, pwd string, prog progress.Reporter) error {
 	results, err := pipeline.SplitDir(pipeline.SplitDirOptions{
 		InputDir:     inputDir,
 		OutputDir:    outputDir,
@@ -116,27 +120,15 @@ func runSplitDir(inputDir, pwd string) error {
 		ParityShards: parityShards,
 		Password:     pwd,
 		NoEncrypt:    noEncrypt,
-		Verbose:      verbose,
+		Verbose:      verbose && !quiet,
 		Workers:      workers,
 		FailFast:     failFast,
+		Progress:     prog,
 	})
 	if err != nil && results == nil {
 		return err
 	}
-
-	batchResults := make([]display.BatchResult, len(results))
-	for i, r := range results {
-		batchResults[i] = display.BatchResult{File: r.File, Error: r.Error}
-	}
-	display.FormatBatchResults(batchResults)
-
-	// Return an error if any file failed
-	for _, r := range results {
-		if r.Error != nil {
-			return fmt.Errorf("some files failed to split")
-		}
-	}
-	return nil
+	return reportBatchResults(results, "split")
 }
 
 func runSplitDryRun(input string) error {

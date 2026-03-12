@@ -9,6 +9,7 @@ import (
 	"github.com/marmos91/horcrux/internal/crypto"
 	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/erasure"
+	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/marmos91/horcrux/internal/shard"
 )
 
@@ -21,10 +22,11 @@ type SplitOptions struct {
 	Password     string
 	NoEncrypt    bool
 	Verbose      bool
+	Progress     progress.Reporter
 }
 
 // Split splits a file into encrypted, erasure-coded shards.
-func Split(opts SplitOptions) error {
+func Split(opts SplitOptions) (err error) {
 	inputFile, err := os.Open(opts.InputFile)
 	if err != nil {
 		return fmt.Errorf("opening input file: %w", err)
@@ -72,7 +74,7 @@ func Split(opts SplitOptions) error {
 	perShard := (int64(originalSize) + int64(opts.DataShards) - 1) / int64(opts.DataShards)
 
 	writers := make([]*shard.Writer, totalShards)
-	for i := 0; i < totalShards; i++ {
+	for i := range totalShards {
 		hdr := &shard.Header{
 			Version:          shard.Version,
 			ShardIndex:       uint8(i),
@@ -96,7 +98,7 @@ func Split(opts SplitOptions) error {
 		shardPath := filepath.Join(opts.OutputDir, shardFilename(originalName, i))
 		w, err := shard.CreateWriter(shardPath, hdr)
 		if err != nil {
-			for j := 0; j < i; j++ {
+			for j := range i {
 				_ = writers[j].Close()
 			}
 			return fmt.Errorf("creating shard %d: %w", i, err)
@@ -112,13 +114,22 @@ func Split(opts SplitOptions) error {
 		}
 	}()
 
-	if opts.Verbose {
+	prog := progress.OrNop(opts.Progress)
+	showVerbose := opts.Verbose && opts.Progress == nil
+
+	if showVerbose {
 		fmt.Printf("Splitting %s (%s) into %d+%d shards\n",
 			originalName, display.FormatSize(originalSize), opts.DataShards, opts.ParityShards)
 	}
 
+	fileProgress := prog.StartFile(originalName, int64(originalSize))
+	defer func() {
+		fileProgress.Finish()
+		prog.FinishFile(originalName, err)
+	}()
+
 	if originalSize == 0 {
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Empty file — writing headers only.")
 		}
 		for i, w := range writers {
@@ -128,7 +139,7 @@ func Split(opts SplitOptions) error {
 		}
 	} else {
 		dataWriters := make([]io.Writer, opts.DataShards)
-		for i := 0; i < opts.DataShards; i++ {
+		for i := range opts.DataShards {
 			dataWriters[i] = writers[i]
 		}
 
@@ -146,7 +157,10 @@ func Split(opts SplitOptions) error {
 			}
 		}
 
-		if opts.Verbose {
+		// Wrap the input reader (not data writers) for accurate byte counting
+		inputReader = fileProgress.WrapReader(inputReader)
+
+		if showVerbose {
 			fmt.Println("Writing data shards...")
 		}
 
@@ -156,7 +170,7 @@ func Split(opts SplitOptions) error {
 
 		// Seek data shard files back to payload start for parity computation
 		dataReaders := make([]io.Reader, opts.DataShards)
-		for i := 0; i < opts.DataShards; i++ {
+		for i := range opts.DataShards {
 			f := writers[i].File()
 			if _, err := f.Seek(shard.HeaderSize, io.SeekStart); err != nil {
 				return fmt.Errorf("seeking data shard %d: %w", i, err)
@@ -165,11 +179,11 @@ func Split(opts SplitOptions) error {
 		}
 
 		parityWriters := make([]io.Writer, opts.ParityShards)
-		for i := 0; i < opts.ParityShards; i++ {
+		for i := range opts.ParityShards {
 			parityWriters[i] = writers[opts.DataShards+i]
 		}
 
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Computing parity shards...")
 		}
 
@@ -177,7 +191,7 @@ func Split(opts SplitOptions) error {
 			return fmt.Errorf("encoding parity: %w", err)
 		}
 
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Writing checksums...")
 		}
 
@@ -193,8 +207,8 @@ func Split(opts SplitOptions) error {
 		writers[i] = nil
 	}
 
-	if opts.Verbose {
-		for i := 0; i < totalShards; i++ {
+	if showVerbose {
+		for i := range totalShards {
 			shardPath := filepath.Join(opts.OutputDir, shardFilename(originalName, i))
 			fmt.Printf("  Created: %s\n", shardPath)
 		}
@@ -240,7 +254,7 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 	totalOutputSize := perShardFileSize * uint64(totalShards)
 
 	shardPaths := make([]string, totalShards)
-	for i := 0; i < totalShards; i++ {
+	for i := range totalShards {
 		shardPaths[i] = filepath.Join(opts.OutputDir, shardFilename(originalName, i))
 	}
 

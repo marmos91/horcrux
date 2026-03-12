@@ -12,6 +12,7 @@ import (
 	"github.com/marmos91/horcrux/internal/crypto"
 	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/erasure"
+	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/marmos91/horcrux/internal/shard"
 )
 
@@ -21,6 +22,7 @@ type MergeOptions struct {
 	OutputFile     string
 	Password       string
 	Verbose        bool
+	Progress       progress.Reporter
 	PromptPassword func() (string, error)
 }
 
@@ -38,7 +40,7 @@ type mergeFileEntry struct {
 }
 
 // Merge reconstructs a file from shards.
-func Merge(opts MergeOptions) error {
+func Merge(opts MergeOptions) (err error) {
 	shards, err := DiscoverShards(opts.ShardDir)
 	if err != nil {
 		return err
@@ -48,7 +50,10 @@ func Merge(opts MergeOptions) error {
 		return fmt.Errorf("no valid .hrcx shard files found in %s", opts.ShardDir)
 	}
 
-	if opts.Verbose {
+	prog := progress.OrNop(opts.Progress)
+	showVerbose := opts.Verbose && opts.Progress == nil
+
+	if showVerbose {
 		fmt.Printf("Found %d shard files\n", len(shards))
 	}
 
@@ -60,7 +65,7 @@ func Merge(opts MergeOptions) error {
 
 	for _, s := range shards[1:] {
 		if err := validateConsistency(ref, s.Header, s.Path); err != nil {
-			if opts.Verbose {
+			if showVerbose {
 				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 			}
 		}
@@ -70,7 +75,7 @@ func Merge(opts MergeOptions) error {
 	for i := range shards {
 		idx := int(shards[i].Header.ShardIndex)
 		if _, exists := indexMap[idx]; exists {
-			if opts.Verbose {
+			if showVerbose {
 				fmt.Fprintf(os.Stderr, "Warning: duplicate shard index %d, using first found\n", idx)
 			}
 			continue
@@ -110,7 +115,7 @@ func Merge(opts MergeOptions) error {
 			return fmt.Errorf("wrong password")
 		}
 
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Password verified.")
 		}
 	}
@@ -120,7 +125,7 @@ func Merge(opts MergeOptions) error {
 	for idx, s := range indexMap {
 		reader, err := shard.OpenReader(s.Path)
 		if err != nil {
-			if opts.Verbose {
+			if showVerbose {
 				fmt.Fprintf(os.Stderr, "Warning: cannot open shard %d: %v\n", idx, err)
 			}
 			continue
@@ -128,7 +133,7 @@ func Merge(opts MergeOptions) error {
 
 		if err := reader.VerifyPayload(); err != nil {
 			_ = reader.Close()
-			if opts.Verbose {
+			if showVerbose {
 				fmt.Fprintf(os.Stderr, "Warning: shard %d has corrupt payload, excluding\n", idx)
 			}
 			continue
@@ -173,7 +178,7 @@ func Merge(opts MergeOptions) error {
 	}
 
 	if needReconstruct {
-		if opts.Verbose {
+		if showVerbose {
 			var missing []int
 			for i := range totalShards {
 				if shardFiles[i] == nil {
@@ -201,8 +206,14 @@ func Merge(opts MergeOptions) error {
 
 	originalSize := int64(ref.OriginalFileSize)
 
+	fileProgress := prog.StartFile(ref.OriginalFilename, originalSize)
+	defer func() {
+		fileProgress.Finish()
+		prog.FinishFile(ref.OriginalFilename, err)
+	}()
+
 	if originalSize == 0 {
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Empty file — nothing to join.")
 		}
 	} else {
@@ -220,7 +231,7 @@ func Merge(opts MergeOptions) error {
 			return err
 		}
 
-		if opts.Verbose {
+		if showVerbose {
 			fmt.Println("Joining shards...")
 		}
 
@@ -239,7 +250,8 @@ func Merge(opts MergeOptions) error {
 				return fmt.Errorf("creating decrypt reader: %w", err)
 			}
 
-			if _, err := io.Copy(outFile, decReader); err != nil {
+			// Wrap the reader side to preserve io.Copy's ReadFrom optimization
+			if _, err := io.Copy(outFile, fileProgress.WrapReader(decReader)); err != nil {
 				return fmt.Errorf("decrypting: %w", err)
 			}
 
@@ -247,13 +259,15 @@ func Merge(opts MergeOptions) error {
 				return fmt.Errorf("joining shards: %w", err)
 			}
 		} else {
-			if err := dec.Join(outFile, dataReaders, originalSize); err != nil {
+			// Wrap the output writer (no ReadFrom optimization available here
+			// since dec.Join writes to the writer directly)
+			if err := dec.Join(fileProgress.WrapWriter(outFile), dataReaders, originalSize); err != nil {
 				return fmt.Errorf("joining shards: %w", err)
 			}
 		}
 	}
 
-	if opts.Verbose {
+	if showVerbose {
 		fmt.Printf("Recovered: %s (%s)\n", outputPath, display.FormatSize(uint64(originalSize)))
 	}
 
@@ -306,7 +320,7 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 	indexMap := make(map[int]*shardInfo)
 	for i := range shards {
 		idx := int(shards[i].Header.ShardIndex)
-		if idx < 0 || idx >= totalShards {
+		if idx >= totalShards {
 			continue
 		}
 		if _, inconsistent := inconsistentIndices[idx]; inconsistent {
@@ -339,7 +353,7 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 
 	// Determine truly missing indices (not found on disk at all)
 	var missingIndices []int
-	for i := 0; i < totalShards; i++ {
+	for i := range totalShards {
 		if _, inIndex := indexMap[i]; !inIndex {
 			missingIndices = append(missingIndices, i)
 		}
@@ -349,7 +363,7 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 
 	needsReconstruction := false
 	if recoverable {
-		for i := 0; i < dataShards; i++ {
+		for i := range dataShards {
 			if _, ok := validMap[i]; !ok {
 				needsReconstruction = true
 				break
@@ -362,7 +376,7 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 		outputFile = ref.OriginalFilename
 	}
 
-	sort.Ints(missingIndices)
+	// missingIndices is already sorted (populated in index order above).
 	sort.Ints(corruptIndices)
 
 	return &MergeDryRunResult{
