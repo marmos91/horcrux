@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/marmos91/horcrux/internal/backend"
@@ -71,13 +70,4 @@ func OpenBackends(uris []string) ([]BackendWithURI, error) {
 		backends = append(backends, BackendWithURI{Backend: b, URI: cleaned})
 	}
 	return backends, nil
-}
-
-// ResolveShardDir returns the shard directory from distribute results,
-// falling back to the given default.
-func ResolveShardDir(shardFiles []ShardFileInfo, fallback string) string {
-	if len(shardFiles) > 0 && shardFiles[0].Path != "" {
-		return filepath.Dir(shardFiles[0].Path)
-	}
-	return fallback
 }
