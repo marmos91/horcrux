@@ -60,17 +60,12 @@ type BackendWithURI struct {
 }
 
 // OpenBackends parses URIs and opens backend instances.
-// If cfg is non-nil, backend-specific options (credentials, etc.) are merged from config.
+// Backend-specific options (credentials, env overrides, etc.) are always merged
+// via NewFromConfig, even when cfg is nil, so that environment variables work.
 func OpenBackends(uris []string, cfg *config.BackendConfig) ([]BackendWithURI, error) {
 	backends := make([]BackendWithURI, 0, len(uris))
 	for _, uri := range uris {
-		var b backend.Backend
-		var err error
-		if cfg != nil {
-			b, err = backend.NewFromConfig(uri, cfg)
-		} else {
-			b, err = backend.Open(uri, nil)
-		}
+		b, err := backend.NewFromConfig(uri, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("opening backend %s: %w", uri, err)
 		}

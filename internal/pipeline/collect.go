@@ -14,6 +14,23 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// validateRemoteKey checks that a remote key is a safe base name with no path
+// traversal components. Returns an error if the key is empty, contains ".."
+// segments, or has path separators.
+func validateRemoteKey(key string) error {
+	if key == "" {
+		return fmt.Errorf("empty remote key")
+	}
+	base := filepath.Base(key)
+	if base != key {
+		return fmt.Errorf("unsafe remote key %q (contains path components)", key)
+	}
+	if key == "." || key == ".." {
+		return fmt.Errorf("unsafe remote key %q", key)
+	}
+	return nil
+}
+
 // CollectFromManifest downloads shards listed in a manifest from their Location
 // fields into tempDir. Only shards with a non-empty Location are downloaded.
 // Each downloaded shard is verified against its expected SHA-256 hash.
@@ -40,6 +57,10 @@ func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir stri
 	for _, entry := range m.Shards {
 		if entry.Location == "" {
 			continue
+		}
+
+		if err := validateRemoteKey(entry.Filename); err != nil {
+			return fmt.Errorf("shard %d: %w", entry.Index, err)
 		}
 
 		localPath := filepath.Join(tempDir, entry.Filename)
@@ -89,13 +110,7 @@ func CollectFromBackends(ctx context.Context, uris []string, tempDir string, cfg
 	var items []collectItem
 
 	for _, uri := range uris {
-		var b backend.Backend
-		var err error
-		if cfg != nil {
-			b, err = backend.NewFromConfig(uri, cfg)
-		} else {
-			b, err = backend.Open(uri, nil)
-		}
+		b, err := backend.NewFromConfig(uri, cfg)
 		if err != nil {
 			return fmt.Errorf("opening backend %s: %w", uri, err)
 		}

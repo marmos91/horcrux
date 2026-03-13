@@ -73,6 +73,10 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("total shards (data + parity) must be <= 255")
 	}
 
+	if len(distributeRaw) > 0 && info.IsDir() {
+		return fmt.Errorf("--distribute is not supported with directory input (split individual files instead)")
+	}
+
 	if dryRun {
 		if info.IsDir() {
 			return runSplitDirDryRun(input)
