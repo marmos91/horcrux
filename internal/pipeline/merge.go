@@ -105,7 +105,7 @@ func Merge(opts MergeOptions) (err error) {
 			}
 			kfHash, kfErr := crypto.ReadKeyFile(opts.KeyFile)
 			if kfErr != nil {
-				return fmt.Errorf("reading key file: %w", kfErr)
+				return kfErr
 			}
 			keyFileMaterial = kfHash[:]
 		}

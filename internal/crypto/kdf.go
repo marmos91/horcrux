@@ -62,10 +62,11 @@ func PasswordTag(key []byte) [8]byte {
 }
 
 // DeriveKey derives a 32-byte key using Argon2id from either a password, key file
-// material, or both (two-factor). The Argon2 input is selected based on which
-// credentials are provided:
+// material, or both (two-factor). The caller must pre-hash the key file
+// (e.g. via ReadKeyFile which returns SHA-256). The Argon2 input is selected
+// based on which credentials are provided:
 //   - password only: Argon2(password)
-//   - key file only: Argon2(SHA256(keyfile))
+//   - key file only: Argon2(keyFileMaterial)
 //   - both (two-factor): Argon2(HMAC-SHA256(key=keyFileMaterial, data=password))
 func DeriveKey(password string, keyFileMaterial []byte, salt [32]byte, params KDFParams) []byte {
 	var input []byte

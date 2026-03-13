@@ -138,7 +138,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		if opts.KeyFile != "" {
 			kfHash, kfErr := crypto.ReadKeyFile(opts.KeyFile)
 			if kfErr != nil {
-				return nil, fmt.Errorf("reading key file: %w", kfErr)
+				return nil, kfErr
 			}
 			keyFileMaterial = kfHash[:]
 		}
