@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/marmos91/horcrux/internal/backend"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -35,32 +34,15 @@ type GDrive struct {
 
 // New creates a Google Drive backend.
 func New(ctx context.Context, folderID string, opts map[string]string) (*GDrive, error) {
-	var clientOpts []option.ClientOption
+	clientOpts := []option.ClientOption{option.WithScopes(drive.DriveFileScope)}
 
 	if saJSON := opts["service-account-json"]; saJSON != "" {
-		creds, err := google.CredentialsFromJSON(ctx, []byte(saJSON), drive.DriveFileScope)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service account JSON: %w", err)
-		}
-		clientOpts = append(clientOpts, option.WithCredentials(creds))
+		// Credentials come from user's own config — safe to use despite deprecation.
+		clientOpts = append(clientOpts, option.WithCredentialsJSON([]byte(saJSON))) //nolint:staticcheck // SA1019: user-controlled credentials
 	} else if credFile := opts["credentials-file"]; credFile != "" {
-		data, err := os.ReadFile(credFile)
-		if err != nil {
-			return nil, fmt.Errorf("reading credentials file: %w", err)
-		}
-		creds, err := google.CredentialsFromJSON(ctx, data, drive.DriveFileScope)
-		if err != nil {
-			return nil, fmt.Errorf("parsing credentials file: %w", err)
-		}
-		clientOpts = append(clientOpts, option.WithCredentials(creds))
-	} else {
-		// Fall back to Application Default Credentials
-		creds, err := google.FindDefaultCredentials(ctx, drive.DriveFileScope)
-		if err != nil {
-			return nil, fmt.Errorf("finding default credentials: %w", err)
-		}
-		clientOpts = append(clientOpts, option.WithCredentials(creds))
+		clientOpts = append(clientOpts, option.WithCredentialsFile(credFile)) //nolint:staticcheck // SA1019: user-controlled credentials
 	}
+	// Otherwise falls back to Application Default Credentials automatically
 
 	service, err := drive.NewService(ctx, clientOpts...)
 	if err != nil {
