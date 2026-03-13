@@ -87,6 +87,9 @@ func importQRDir(dir string) error {
 	}
 
 	if imported == 0 && failed == 0 {
+		if skipped > 0 {
+			return fmt.Errorf("no decodable QR images found in %s (%d SVG file(s) skipped — SVG decoding is not supported)", dir, skipped)
+		}
 		return fmt.Errorf("no QR code images found in %s", dir)
 	}
 
@@ -120,8 +123,12 @@ func importQRFile(imagePath string) error {
 		return fmt.Errorf("invalid shard data in %s: %w", filepath.Base(imagePath), err)
 	}
 
-	// Derive output filename from shard header
-	outName := fmt.Sprintf("%s.%03d.hrcx", header.OriginalFilename, header.ShardIndex)
+	// Derive output filename from shard header, sanitizing to prevent directory traversal
+	baseName := filepath.Base(header.OriginalFilename)
+	if baseName == "." || baseName == "/" || baseName == string(filepath.Separator) || baseName == "" {
+		return fmt.Errorf("invalid filename in shard header: %q", header.OriginalFilename)
+	}
+	outName := fmt.Sprintf("%s.%03d.hrcx", baseName, header.ShardIndex)
 	outPath := filepath.Join(importQROutput, outName)
 
 	if !importQRForce {

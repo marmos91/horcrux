@@ -11,8 +11,8 @@ import (
 
 const (
 	// MaxQRBinaryBytes is the maximum number of raw bytes that can be encoded
-	// in a QR code after base64 overhead. QR v40 ECC-L holds 2953 alphanumeric
-	// chars; base64 expands data by 4/3, so max raw bytes = 2953 * 3 / 4 = 2214.
+	// in a QR code after base64 overhead. QR v40 ECC-L holds 2953 bytes in
+	// byte mode; base64 expands data by 4/3, so max raw bytes = 2953 * 3 / 4 = 2214.
 	MaxQRBinaryBytes = 2214
 
 	// DefaultQRSize is the default pixel dimension for generated QR code PNGs.
@@ -28,7 +28,10 @@ type ShardTooLargeError struct {
 }
 
 func (e *ShardTooLargeError) Error() string {
-	return fmt.Sprintf("shard %s is %d bytes, exceeds QR capacity of %d bytes", e.Path, e.Size, e.Max)
+	if e.Path != "" {
+		return fmt.Sprintf("shard %s is %d bytes, exceeds QR capacity of %d bytes", e.Path, e.Size, e.Max)
+	}
+	return fmt.Sprintf("shard data is %d bytes, exceeds QR capacity of %d bytes", e.Size, e.Max)
 }
 
 // CheckShardFits checks whether a shard file fits within QR code capacity
