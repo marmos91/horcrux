@@ -51,18 +51,6 @@ func GenerateIV() ([16]byte, error) {
 	return iv, nil
 }
 
-// DeriveKey derives a 32-byte key from a password and salt using Argon2id.
-func DeriveKey(password string, salt [32]byte, params KDFParams) []byte {
-	return argon2.IDKey(
-		[]byte(password),
-		salt[:],
-		params.Time,
-		params.Memory,
-		params.Parallelism,
-		KeyLen,
-	)
-}
-
 // PasswordTag computes HMAC-SHA256(key, sentinel)[:8] for fast password verification.
 func PasswordTag(key []byte) [8]byte {
 	mac := hmac.New(sha256.New, key)
@@ -73,22 +61,19 @@ func PasswordTag(key []byte) [8]byte {
 	return tag
 }
 
-// DeriveKeyWithMaterial derives a 32-byte key using either a password, key file
+// DeriveKey derives a 32-byte key using Argon2id from either a password, key file
 // material, or both (two-factor). The Argon2 input is selected based on which
 // credentials are provided:
 //   - password only: Argon2(password)
 //   - key file only: Argon2(SHA256(keyfile))
 //   - both (two-factor): Argon2(HMAC-SHA256(key=keyFileMaterial, data=password))
-func DeriveKeyWithMaterial(password string, keyFileMaterial []byte, salt [32]byte, params KDFParams) []byte {
+func DeriveKey(password string, keyFileMaterial []byte, salt [32]byte, params KDFParams) []byte {
 	var input []byte
 
-	hasPassword := password != ""
-	hasKeyFile := len(keyFileMaterial) > 0
-
 	switch {
-	case hasPassword && hasKeyFile:
+	case password != "" && len(keyFileMaterial) > 0:
 		input = CombinePasswordAndKeyFile(password, keyFileMaterial)
-	case hasKeyFile:
+	case len(keyFileMaterial) > 0:
 		input = keyFileMaterial
 	default:
 		input = []byte(password)

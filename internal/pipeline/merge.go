@@ -129,17 +129,10 @@ func Merge(opts MergeOptions) (err error) {
 			Memory:      ref.ArgonMemory,
 			Parallelism: ref.ArgonParallelism,
 		}
-		key = crypto.DeriveKeyWithMaterial(pwd, keyFileMaterial, ref.Salt, kdfParams)
+		key = crypto.DeriveKey(pwd, keyFileMaterial, ref.Salt, kdfParams)
 
 		if !crypto.VerifyPasswordTag(key, ref.PasswordTag) {
-			switch {
-			case needsKeyFile && needsPassword:
-				return fmt.Errorf("wrong password or key file")
-			case needsKeyFile:
-				return fmt.Errorf("wrong key file")
-			default:
-				return fmt.Errorf("wrong password")
-			}
+			return fmt.Errorf("wrong %s", credentialDescription(needsPassword, needsKeyFile))
 		}
 
 		if showVerbose {
@@ -479,6 +472,18 @@ func validateConsistency(ref, other *shard.Header, path string) error {
 		return fmt.Errorf("%s: salt mismatch (shards from different split operations?)", path)
 	}
 	return nil
+}
+
+// credentialDescription returns a human-readable label for the credential
+// combination used, for use in error messages.
+func credentialDescription(password, keyFile bool) string {
+	if password && keyFile {
+		return "password or key file"
+	}
+	if keyFile {
+		return "key file"
+	}
+	return "password"
 }
 
 func reconstructMissing(shardFiles []*mergeFileEntry, ref *shard.Header) error {

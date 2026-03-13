@@ -8,8 +8,8 @@ func TestDeriveKeyDeterministic(t *testing.T) {
 	salt := [32]byte{1, 2, 3, 4, 5}
 	params := KDFParams{Time: 1, Memory: 64 * 1024, Parallelism: 1}
 
-	key1 := DeriveKey("password", salt, params)
-	key2 := DeriveKey("password", salt, params)
+	key1 := DeriveKey("password", nil, salt, params)
+	key2 := DeriveKey("password", nil, salt, params)
 
 	if len(key1) != KeyLen {
 		t.Fatalf("key length: got %d, want %d", len(key1), KeyLen)
@@ -27,8 +27,8 @@ func TestDeriveKeyDifferentSalts(t *testing.T) {
 	salt2 := [32]byte{2}
 	params := KDFParams{Time: 1, Memory: 64 * 1024, Parallelism: 1}
 
-	key1 := DeriveKey("password", salt1, params)
-	key2 := DeriveKey("password", salt2, params)
+	key1 := DeriveKey("password", nil, salt1, params)
+	key2 := DeriveKey("password", nil, salt2, params)
 
 	same := true
 	for i := range key1 {
@@ -46,8 +46,8 @@ func TestDeriveKeyDifferentPasswords(t *testing.T) {
 	salt := [32]byte{1, 2, 3}
 	params := KDFParams{Time: 1, Memory: 64 * 1024, Parallelism: 1}
 
-	key1 := DeriveKey("password1", salt, params)
-	key2 := DeriveKey("password2", salt, params)
+	key1 := DeriveKey("password1", nil, salt, params)
+	key2 := DeriveKey("password2", nil, salt, params)
 
 	same := true
 	for i := range key1 {
@@ -64,7 +64,7 @@ func TestDeriveKeyDifferentPasswords(t *testing.T) {
 func TestPasswordTagMatch(t *testing.T) {
 	salt := [32]byte{1, 2, 3}
 	params := KDFParams{Time: 1, Memory: 64 * 1024, Parallelism: 1}
-	key := DeriveKey("correct-password", salt, params)
+	key := DeriveKey("correct-password", nil, salt, params)
 
 	tag := PasswordTag(key)
 	if !VerifyPasswordTag(key, tag) {
@@ -76,8 +76,8 @@ func TestPasswordTagMismatch(t *testing.T) {
 	salt := [32]byte{1, 2, 3}
 	params := KDFParams{Time: 1, Memory: 64 * 1024, Parallelism: 1}
 
-	key1 := DeriveKey("correct-password", salt, params)
-	key2 := DeriveKey("wrong-password", salt, params)
+	key1 := DeriveKey("correct-password", nil, salt, params)
+	key2 := DeriveKey("wrong-password", nil, salt, params)
 
 	tag := PasswordTag(key1)
 	if VerifyPasswordTag(key2, tag) {

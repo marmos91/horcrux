@@ -152,7 +152,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		if err != nil {
 			return nil, fmt.Errorf("generating IV: %w", err)
 		}
-		key = crypto.DeriveKeyWithMaterial(opts.Password, keyFileMaterial, salt, kdfParams)
+		key = crypto.DeriveKey(opts.Password, keyFileMaterial, salt, kdfParams)
 		pwTag = crypto.PasswordTag(key)
 	}
 
@@ -176,12 +176,8 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 
 		if encrypt {
 			hdr.SetEncrypted(true)
-			if opts.KeyFile != "" {
-				hdr.SetKeyFileUsed(true)
-			}
-			if opts.Password != "" {
-				hdr.SetPasswordUsed(true)
-			}
+			hdr.SetKeyFileUsed(len(keyFileMaterial) > 0)
+			hdr.SetPasswordUsed(opts.Password != "")
 			hdr.Salt = salt
 			hdr.IV = iv
 			hdr.ArgonTime = kdfParams.Time
@@ -387,7 +383,7 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 	originalName := filepath.Base(opts.InputFile)
 	totalShards := opts.DataShards + opts.ParityShards
 	encrypted := !opts.NoEncrypt
-	keyFileUsed := opts.KeyFile != ""
+	keyFileUsed := encrypted && opts.KeyFile != ""
 
 	var perShardPayload uint64
 	if originalSize > 0 {
