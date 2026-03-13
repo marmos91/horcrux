@@ -61,7 +61,10 @@ func (d *Dropbox) Upload(ctx context.Context, localPath string, remoteKey string
 		"mute":            true,
 		"strict_conflict": false,
 	}
-	argJSON, _ := json.Marshal(apiArg)
+	argJSON, err := json.Marshal(apiArg)
+	if err != nil {
+		return fmt.Errorf("marshaling Dropbox API arg: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://content.dropboxapi.com/2/files/upload", f)
@@ -89,7 +92,10 @@ func (d *Dropbox) Download(ctx context.Context, remoteKey string, localPath stri
 	apiArg := map[string]string{
 		"path": d.remotePath(remoteKey),
 	}
-	argJSON, _ := json.Marshal(apiArg)
+	argJSON, err := json.Marshal(apiArg)
+	if err != nil {
+		return fmt.Errorf("marshaling Dropbox API arg: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://content.dropboxapi.com/2/files/download", nil)
@@ -156,7 +162,10 @@ func (d *Dropbox) List(ctx context.Context, prefix string) ([]backend.RemoteFile
 	url := "https://api.dropboxapi.com/2/files/list_folder"
 
 	for {
-		bodyJSON, _ := json.Marshal(body)
+		bodyJSON, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshaling Dropbox request body: %w", err)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyJSON))
 		if err != nil {
 			return nil, fmt.Errorf("creating request: %w", err)
@@ -206,7 +215,10 @@ func (d *Dropbox) Delete(ctx context.Context, remoteKey string) error {
 	body := map[string]string{
 		"path": d.remotePath(remoteKey),
 	}
-	bodyJSON, _ := json.Marshal(body)
+	bodyJSON, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshaling Dropbox request body: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		"https://api.dropboxapi.com/2/files/delete_v2", bytes.NewReader(bodyJSON))

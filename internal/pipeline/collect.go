@@ -72,15 +72,21 @@ func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir stri
 	return g.Wait()
 }
 
+// collectItem holds the information needed to download a single shard file.
+type collectItem struct {
+	backend backend.Backend
+	key     string
+	uri     string
+	dest    string
+}
+
 // CollectFromBackends lists .hrcx files on each backend URI and downloads
 // all of them to tempDir. Detects filename collisions across backends.
 // If cfg is non-nil, backend-specific options are merged from config.
 func CollectFromBackends(ctx context.Context, uris []string, tempDir string, cfg *config.BackendConfig) error {
-	g, ctx := errgroup.WithContext(ctx)
-
-	// Track seen filenames to detect collisions
-	var mu sync.Mutex
+	// Phase 1: List all files and detect collisions before downloading.
 	seen := make(map[string]string) // base filename → source URI
+	var items []collectItem
 
 	for _, uri := range uris {
 		var b backend.Backend
@@ -101,24 +107,30 @@ func CollectFromBackends(ctx context.Context, uris []string, tempDir string, cfg
 
 		for _, f := range files {
 			baseName := filepath.Base(f.Key)
-
-			mu.Lock()
 			if existingURI, exists := seen[baseName]; exists {
-				mu.Unlock()
 				return fmt.Errorf("filename collision: %q found on both %s and %s", baseName, existingURI, uri)
 			}
 			seen[baseName] = uri
-			mu.Unlock()
-
-			localPath := filepath.Join(tempDir, baseName)
-
-			g.Go(func() error {
-				if err := b.Download(ctx, f.Key, localPath); err != nil {
-					return fmt.Errorf("downloading %s from %s: %w", f.Key, uri, err)
-				}
-				return nil
+			items = append(items, collectItem{
+				backend: b,
+				key:     f.Key,
+				uri:     uri,
+				dest:    filepath.Join(tempDir, baseName),
 			})
 		}
+	}
+
+	// Phase 2: Download all files with bounded concurrency.
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
+
+	for _, item := range items {
+		g.Go(func() error {
+			if err := item.backend.Download(ctx, item.key, item.dest); err != nil {
+				return fmt.Errorf("downloading %s from %s: %w", item.key, item.uri, err)
+			}
+			return nil
+		})
 	}
 
 	return g.Wait()

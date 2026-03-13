@@ -57,12 +57,12 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	// If --collect with --manifest, use manifest-guided collection
 	if len(collectRaw) > 0 && mergeManifest != "" {
-		return runCollectWithManifest()
+		return runCollectWithManifest(cmd.Context())
 	}
 
 	// If --collect without manifest, use backend listing
 	if len(collectRaw) > 0 {
-		return runCollectFromBackends()
+		return runCollectFromBackends(cmd.Context())
 	}
 
 	// Determine shard directory
@@ -133,7 +133,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 // runCollectWithManifest downloads shards from their manifest Location fields,
 // then merges from the temp directory.
-func runCollectWithManifest() error {
+func runCollectWithManifest(ctx context.Context) error {
 	mf, err := manifest.Load(mergeManifest)
 	if err != nil {
 		return fmt.Errorf("loading manifest: %w", err)
@@ -145,7 +145,7 @@ func runCollectWithManifest() error {
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	if err := pipeline.CollectFromManifest(context.Background(), mf, tempDir, loadedBackendConfig); err != nil {
+	if err := pipeline.CollectFromManifest(ctx, mf, tempDir, loadedBackendConfig); err != nil {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
 
@@ -162,14 +162,14 @@ func runCollectWithManifest() error {
 
 // runCollectFromBackends lists .hrcx files on each backend, downloads them,
 // then merges from the temp directory.
-func runCollectFromBackends() error {
+func runCollectFromBackends(ctx context.Context) error {
 	tempDir, err := os.MkdirTemp("", "hrcx-collect-*")
 	if err != nil {
 		return fmt.Errorf("creating temp directory: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	if err := pipeline.CollectFromBackends(context.Background(), collectRaw, tempDir, loadedBackendConfig); err != nil {
+	if err := pipeline.CollectFromBackends(ctx, collectRaw, tempDir, loadedBackendConfig); err != nil {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
 

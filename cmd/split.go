@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"runtime"
@@ -130,7 +129,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		result.ShardFiles, err = pipeline.DistributeShards(context.Background(), result.ShardFiles, backends)
+		result.ShardFiles, err = pipeline.DistributeShards(cmd.Context(), result.ShardFiles, backends)
 		if err != nil {
 			return err
 		}
