@@ -83,7 +83,16 @@ func inspectFile(path string) error {
 
 	encrypted := "no"
 	if header.IsEncrypted() {
-		encrypted = "yes"
+		usesKey := header.UsesKeyFile()
+		usesPass := header.UsesPassword()
+		switch {
+		case usesKey && usesPass:
+			encrypted = "yes (password + key file)"
+		case usesKey:
+			encrypted = "yes (key file)"
+		default:
+			encrypted = "yes (password)"
+		}
 	}
 
 	checksumStatus := "OK"

@@ -21,6 +21,7 @@ type MergeOptions struct {
 	ShardDir       string
 	OutputFile     string
 	Password       string
+	KeyFile        string
 	Verbose        bool
 	Progress       progress.Reporter
 	PromptPassword func() (string, error)
@@ -93,14 +94,33 @@ func Merge(opts MergeOptions) (err error) {
 	var key []byte
 
 	if encrypted {
-		pwd := opts.Password
-		if pwd == "" {
-			if opts.PromptPassword == nil {
-				return fmt.Errorf("file is encrypted but no password provided")
+		needsKeyFile := ref.UsesKeyFile()
+		needsPassword := ref.UsesPassword()
+
+		// Read key file material if needed
+		var keyFileMaterial []byte
+		if needsKeyFile {
+			if opts.KeyFile == "" {
+				return fmt.Errorf("shards were encrypted with a key file; provide --key-file")
 			}
-			pwd, err = opts.PromptPassword()
-			if err != nil {
-				return err
+			kfHash, kfErr := crypto.ReadKeyFile(opts.KeyFile)
+			if kfErr != nil {
+				return kfErr
+			}
+			keyFileMaterial = kfHash[:]
+		}
+
+		// Resolve password if needed
+		pwd := opts.Password
+		if needsPassword {
+			if pwd == "" {
+				if opts.PromptPassword == nil {
+					return fmt.Errorf("file is encrypted but no password provided")
+				}
+				pwd, err = opts.PromptPassword()
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -109,14 +129,14 @@ func Merge(opts MergeOptions) (err error) {
 			Memory:      ref.ArgonMemory,
 			Parallelism: ref.ArgonParallelism,
 		}
-		key = crypto.DeriveKey(pwd, ref.Salt, kdfParams)
+		key = crypto.DeriveKey(pwd, keyFileMaterial, ref.Salt, kdfParams)
 
 		if !crypto.VerifyPasswordTag(key, ref.PasswordTag) {
-			return fmt.Errorf("wrong password")
+			return fmt.Errorf("wrong %s", credentialDescription(needsPassword, needsKeyFile))
 		}
 
 		if showVerbose {
-			fmt.Println("Password verified.")
+			fmt.Println("Credentials verified.")
 		}
 	}
 
@@ -286,6 +306,7 @@ type MergeDryRunResult struct {
 	MissingIndices      []int
 	CorruptIndices      []int
 	Encrypted           bool
+	UsesKeyFile         bool
 	Recoverable         bool
 	NeedsReconstruction bool
 	OutputFile          string
@@ -390,6 +411,7 @@ func DryRunMerge(opts MergeOptions) (*MergeDryRunResult, error) {
 		MissingIndices:      missingIndices,
 		CorruptIndices:      corruptIndices,
 		Encrypted:           ref.IsEncrypted(),
+		UsesKeyFile:         ref.UsesKeyFile(),
 		Recoverable:         recoverable,
 		NeedsReconstruction: needsReconstruction,
 		OutputFile:          outputFile,
@@ -450,6 +472,18 @@ func validateConsistency(ref, other *shard.Header, path string) error {
 		return fmt.Errorf("%s: salt mismatch (shards from different split operations?)", path)
 	}
 	return nil
+}
+
+// credentialDescription returns a human-readable label for the credential
+// combination used, for use in error messages.
+func credentialDescription(password, keyFile bool) string {
+	if password && keyFile {
+		return "password or key file"
+	}
+	if keyFile {
+		return "key file"
+	}
+	return "password"
 }
 
 func reconstructMissing(shardFiles []*mergeFileEntry, ref *shard.Header) error {

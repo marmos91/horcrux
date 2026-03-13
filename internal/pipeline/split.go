@@ -24,6 +24,7 @@ type SplitOptions struct {
 	DataShards   int
 	ParityShards int
 	Password     string
+	KeyFile      string
 	NoEncrypt    bool
 	NoManifest   bool
 	Verbose      bool
@@ -38,6 +39,7 @@ type SplitResult struct {
 	DataShards       int
 	ParityShards     int
 	Encrypted        bool
+	KeyFileUsed      bool
 	ArgonTime        uint32
 	ArgonMemory      uint32
 	ArgonParallelism uint8
@@ -77,9 +79,10 @@ func (r *SplitResult) BuildManifest() *manifest.Manifest {
 
 	if r.Encrypted {
 		m.Encryption = manifest.EncryptionInfo{
-			Encrypted: true,
-			Algorithm: "AES-256-CTR",
-			KDF:       "Argon2id",
+			Encrypted:   true,
+			KeyFileUsed: r.KeyFileUsed,
+			Algorithm:   "AES-256-CTR",
+			KDF:         "Argon2id",
 			KDFParams: &manifest.KDFParams{
 				Time:        r.ArgonTime,
 				MemoryKB:    r.ArgonMemory,
@@ -122,15 +125,24 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 	}
 
 	var (
-		key       []byte
-		salt      [32]byte
-		iv        [16]byte
-		pwTag     [8]byte
-		kdfParams crypto.KDFParams
+		key             []byte
+		salt            [32]byte
+		iv              [16]byte
+		pwTag           [8]byte
+		kdfParams       crypto.KDFParams
+		keyFileMaterial []byte
 	)
 
 	encrypt := !opts.NoEncrypt
 	if encrypt {
+		if opts.KeyFile != "" {
+			kfHash, kfErr := crypto.ReadKeyFile(opts.KeyFile)
+			if kfErr != nil {
+				return nil, kfErr
+			}
+			keyFileMaterial = kfHash[:]
+		}
+
 		kdfParams = crypto.DefaultKDFParams()
 		salt, err = crypto.GenerateSalt()
 		if err != nil {
@@ -140,7 +152,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		if err != nil {
 			return nil, fmt.Errorf("generating IV: %w", err)
 		}
-		key = crypto.DeriveKey(opts.Password, salt, kdfParams)
+		key = crypto.DeriveKey(opts.Password, keyFileMaterial, salt, kdfParams)
 		pwTag = crypto.PasswordTag(key)
 	}
 
@@ -164,6 +176,8 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 
 		if encrypt {
 			hdr.SetEncrypted(true)
+			hdr.SetKeyFileUsed(len(keyFileMaterial) > 0)
+			hdr.SetPasswordUsed(opts.Password != "")
 			hdr.Salt = salt
 			hdr.IV = iv
 			hdr.ArgonTime = kdfParams.Time
@@ -329,6 +343,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		DataShards:     opts.DataShards,
 		ParityShards:   opts.ParityShards,
 		Encrypted:      encrypt,
+		KeyFileUsed:    encrypt && opts.KeyFile != "",
 		ShardFiles:     shardFiles,
 	}
 	if encrypt {
@@ -351,6 +366,7 @@ type SplitDryRunResult struct {
 	PerShardFileSize uint64
 	TotalOutputSize  uint64
 	Encrypted        bool
+	KeyFileUsed      bool
 	OutputDir        string
 	ShardPaths       []string
 	RelPath          string // Relative path from input root (batch mode only)
@@ -367,6 +383,7 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 	originalName := filepath.Base(opts.InputFile)
 	totalShards := opts.DataShards + opts.ParityShards
 	encrypted := !opts.NoEncrypt
+	keyFileUsed := encrypted && opts.KeyFile != ""
 
 	var perShardPayload uint64
 	if originalSize > 0 {
@@ -390,6 +407,7 @@ func DryRunSplit(opts SplitOptions) (*SplitDryRunResult, error) {
 		PerShardFileSize: perShardFileSize,
 		TotalOutputSize:  totalOutputSize,
 		Encrypted:        encrypted,
+		KeyFileUsed:      keyFileUsed,
 		OutputDir:        opts.OutputDir,
 		ShardPaths:       shardPaths,
 	}, nil

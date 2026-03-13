@@ -1456,6 +1456,226 @@ func TestE2E_ExportQR_SVG(t *testing.T) {
 	}
 }
 
+// --- Key File E2E tests ---
+
+func TestE2E_SplitMerge_KeyFileOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	// Generate key file
+	out, err := runHrcx(t, "keygen", "-o", keyPath)
+	if err != nil {
+		t.Fatalf("keygen failed: %v\n%s", err, out)
+	}
+
+	// Split with key file only (no password)
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Merge with key file
+	if _, err := runHrcx(t, "merge", "--key-file", keyPath, "-o", output, shardDir); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch")
+	}
+}
+
+func TestE2E_SplitMerge_TwoFactor(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	// Generate key file
+	if _, err := runHrcx(t, "keygen", "-o", keyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+
+	// Split with key file + password (two-factor)
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Merge with key file + password
+	if _, err := runHrcx(t, "merge", "--key-file", keyPath, "-p", "test123", "-o", output, shardDir); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch")
+	}
+}
+
+func TestE2E_Merge_WrongKeyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "correct.key")
+	wrongKeyPath := filepath.Join(tmpDir, "wrong.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "keygen", "-o", keyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+	if _, err := runHrcx(t, "keygen", "-o", wrongKeyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "merge", "--key-file", wrongKeyPath, "-o", filepath.Join(tmpDir, "out.txt"), shardDir)
+	if err == nil {
+		t.Fatal("expected merge to fail with wrong key file")
+	}
+	if !strings.Contains(out, "wrong key file") {
+		t.Fatalf("expected 'wrong key file' error, got: %s", out)
+	}
+}
+
+func TestE2E_Merge_MissingKeyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "keygen", "-o", keyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Try merge without providing --key-file
+	out, err := runHrcx(t, "merge", "-o", filepath.Join(tmpDir, "out.txt"), shardDir)
+	if err == nil {
+		t.Fatal("expected merge to fail without key file")
+	}
+	if !strings.Contains(out, "key file") {
+		t.Fatalf("expected key file error message, got: %s", out)
+	}
+}
+
+func TestE2E_Merge_TwoFactor_WrongPassword(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "keygen", "-o", keyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-p", "correct", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "merge", "--key-file", keyPath, "-p", "wrong", "-o", filepath.Join(tmpDir, "out.txt"), shardDir)
+	if err == nil {
+		t.Fatal("expected merge to fail with wrong password")
+	}
+	if !strings.Contains(out, "wrong password or key file") {
+		t.Fatalf("expected 'wrong password or key file' error, got: %s", out)
+	}
+}
+
+func TestE2E_Keygen_Basic(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "gen.key")
+
+	out, err := runHrcx(t, "keygen", "-o", keyPath, "-s", "128")
+	if err != nil {
+		t.Fatalf("keygen failed: %v\n%s", err, out)
+	}
+
+	info, err := os.Stat(keyPath)
+	if err != nil {
+		t.Fatalf("key file not created: %v", err)
+	}
+	if info.Size() != 128 {
+		t.Fatalf("expected 128 bytes, got %d", info.Size())
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected permissions 0600, got %o", info.Mode().Perm())
+	}
+}
+
+func TestE2E_Keygen_ExistingFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "existing.key")
+	_ = os.WriteFile(keyPath, []byte("existing"), 0o644)
+
+	out, err := runHrcx(t, "keygen", "-o", keyPath)
+	if err == nil {
+		t.Fatal("expected keygen to fail for existing file")
+	}
+	if !strings.Contains(out, "already exists") {
+		t.Fatalf("expected 'already exists' error, got: %s", out)
+	}
+}
+
+func TestE2E_Inspect_KeyFileInfo(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "test.key")
+	shardDir := filepath.Join(tmpDir, "shards")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "keygen", "-o", keyPath); err != nil {
+		t.Fatalf("keygen failed: %v", err)
+	}
+
+	// Key file only
+	if _, err := runHrcx(t, "split", "--key-file", keyPath, "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "inspect", filepath.Join(shardDir, "small.txt.000.hrcx"))
+	if err != nil {
+		t.Fatalf("inspect failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "key file") {
+		t.Fatalf("expected 'key file' in inspect output, got: %s", out)
+	}
+}
+
+func TestE2E_BackwardCompat_PasswordOnly(t *testing.T) {
+	// Verify that password-only shards (legacy behavior) still work after the
+	// key file feature was added.
+	tmpDir := t.TempDir()
+	shardDir := filepath.Join(tmpDir, "shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+	input := testdataPath("small.txt")
+
+	if _, err := runHrcx(t, "split", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, shardDir); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch — backward compat regression")
+	}
+
+	// Inspect should show "password" mode
+	out, err := runHrcx(t, "inspect", filepath.Join(shardDir, "small.txt.000.hrcx"))
+	if err != nil {
+		t.Fatalf("inspect failed: %v", err)
+	}
+	if !strings.Contains(out, "password") {
+		t.Fatalf("expected 'password' in inspect output, got: %s", out)
+	}
+}
+
 func TestE2E_ExportQR_NoEncryption(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := testdataPath("small.txt")

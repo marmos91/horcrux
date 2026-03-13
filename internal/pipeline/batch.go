@@ -28,6 +28,7 @@ type SplitDirOptions struct {
 	DataShards   int
 	ParityShards int
 	Password     string
+	KeyFile      string
 	NoEncrypt    bool
 	Verbose      bool
 	Workers      int
@@ -41,6 +42,7 @@ type MergeDirOptions struct {
 	InputDir       string
 	OutputDir      string
 	Password       string
+	KeyFile        string
 	Verbose        bool
 	Workers        int
 	FailFast       bool
@@ -86,6 +88,7 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 				DataShards:   opts.DataShards,
 				ParityShards: opts.ParityShards,
 				Password:     opts.Password,
+				KeyFile:      opts.KeyFile,
 				NoEncrypt:    opts.NoEncrypt,
 				NoManifest:   opts.NoManifest,
 				Verbose:      opts.Verbose,
@@ -221,6 +224,7 @@ func mergeSingleDir(shardDir, rel, password string, opts MergeDirOptions) error 
 		ShardDir:   shardDir,
 		OutputFile: filepath.Join(outDir, origName),
 		Password:   password,
+		KeyFile:    opts.KeyFile,
 		Verbose:    opts.Verbose,
 		Progress:   opts.Progress,
 	})

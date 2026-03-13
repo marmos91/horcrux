@@ -16,6 +16,7 @@ type Config struct {
 	DataShards   *int           `yaml:"data-shards,omitempty"`
 	ParityShards *int           `yaml:"parity-shards,omitempty"`
 	Output       *string        `yaml:"output,omitempty"`
+	KeyFile      *string        `yaml:"key-file,omitempty"`
 	NoEncrypt    *bool          `yaml:"no-encrypt,omitempty"`
 	Workers      *int           `yaml:"workers,omitempty"`
 	FailFast     *bool          `yaml:"fail-fast,omitempty"`

@@ -51,18 +51,6 @@ func GenerateIV() ([16]byte, error) {
 	return iv, nil
 }
 
-// DeriveKey derives a 32-byte key from a password and salt using Argon2id.
-func DeriveKey(password string, salt [32]byte, params KDFParams) []byte {
-	return argon2.IDKey(
-		[]byte(password),
-		salt[:],
-		params.Time,
-		params.Memory,
-		params.Parallelism,
-		KeyLen,
-	)
-}
-
 // PasswordTag computes HMAC-SHA256(key, sentinel)[:8] for fast password verification.
 func PasswordTag(key []byte) [8]byte {
 	mac := hmac.New(sha256.New, key)
@@ -71,6 +59,35 @@ func PasswordTag(key []byte) [8]byte {
 	var tag [8]byte
 	copy(tag[:], full[:8])
 	return tag
+}
+
+// DeriveKey derives a 32-byte key using Argon2id from either a password, key file
+// material, or both (two-factor). The caller must pre-hash the key file
+// (e.g. via ReadKeyFile which returns SHA-256). The Argon2 input is selected
+// based on which credentials are provided:
+//   - password only: Argon2(password)
+//   - key file only: Argon2(keyFileMaterial)
+//   - both (two-factor): Argon2(HMAC-SHA256(key=keyFileMaterial, data=password))
+func DeriveKey(password string, keyFileMaterial []byte, salt [32]byte, params KDFParams) []byte {
+	var input []byte
+
+	switch {
+	case password != "" && len(keyFileMaterial) > 0:
+		input = CombinePasswordAndKeyFile(password, keyFileMaterial)
+	case len(keyFileMaterial) > 0:
+		input = keyFileMaterial
+	default:
+		input = []byte(password)
+	}
+
+	return argon2.IDKey(
+		input,
+		salt[:],
+		params.Time,
+		params.Memory,
+		params.Parallelism,
+		KeyLen,
+	)
 }
 
 // VerifyPasswordTag checks if the given tag matches the expected tag for the key.
