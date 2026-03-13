@@ -71,14 +71,12 @@ func Verify(dir string) (*VerifyResult, error) {
 		}
 	}
 
-	// Build index map, skipping inconsistent, out-of-range, and duplicate shards
+	// Build index map for all valid shards (including inconsistent ones for reporting).
+	// Skip out-of-range and duplicate shards.
 	indexMap := make(map[int]*shardInfo)
 	for i := range shards {
 		idx := int(shards[i].Header.ShardIndex)
 		if idx >= totalShards {
-			continue
-		}
-		if _, skip := inconsistent[idx]; skip {
 			continue
 		}
 		if _, dup := indexMap[idx]; dup {
@@ -87,10 +85,14 @@ func Verify(dir string) (*VerifyResult, error) {
 		indexMap[idx] = &shards[i]
 	}
 
-	// Verify payload checksums
+	// Verify payload checksums (skip inconsistent shards; they count as corrupt)
 	payloadValid := make(map[int]bool, len(indexMap))
 	var corruptIndices []int
 	for idx, s := range indexMap {
+		if _, isInconsistent := inconsistent[idx]; isInconsistent {
+			corruptIndices = append(corruptIndices, idx)
+			continue
+		}
 		if verifyShardPayload(s.Path) {
 			payloadValid[idx] = true
 		} else {
@@ -99,7 +101,7 @@ func Verify(dir string) (*VerifyResult, error) {
 	}
 	sort.Ints(corruptIndices)
 
-	// Determine missing indices
+	// Determine missing indices (only truly absent shards)
 	var missingIndices []int
 	for i := range totalShards {
 		if _, found := indexMap[i]; !found {
@@ -127,8 +129,9 @@ func Verify(dir string) (*VerifyResult, error) {
 		st.Path = s.Path
 		st.Filename = filepath.Base(s.Path)
 		st.HeaderValid = s.Header.ChecksumValid
-		st.ConsistencyOK = true // inconsistent shards are excluded from indexMap
-		st.PayloadValid = payloadValid[i]
+		_, isInconsistent := inconsistent[i]
+		st.ConsistencyOK = !isInconsistent
+		st.PayloadValid = !isInconsistent && payloadValid[i]
 		st.ManifestHashOK = checkManifestHash(m, i, s.Path)
 		statuses[i] = st
 	}
@@ -231,7 +234,7 @@ func loadManifestFromDir(dir, originalFilename string) (*manifest.Manifest, bool
 		return m, true
 	}
 
-	// Fall back to scanning for any *.manifest.json
+	// Fall back to scanning for any *.manifest.json that matches the shard set
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, false
@@ -239,7 +242,7 @@ func loadManifestFromDir(dir, originalFilename string) (*manifest.Manifest, bool
 	for _, e := range entries {
 		if !e.IsDir() && strings.HasSuffix(e.Name(), ".manifest.json") {
 			m, err := manifest.Load(filepath.Join(dir, e.Name()))
-			if err == nil {
+			if err == nil && m.Original.Filename == originalFilename {
 				return m, true
 			}
 		}

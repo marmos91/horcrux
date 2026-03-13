@@ -1561,7 +1561,9 @@ func TestE2E_Verify_Unrecoverable(t *testing.T) {
 	shardDir := splitForVerify(t, 5, 3)
 
 	for _, idx := range []string{"001", "003", "005", "007"} {
-		_ = os.Remove(filepath.Join(shardDir, "small.txt."+idx+".hrcx"))
+		if err := os.Remove(filepath.Join(shardDir, "small.txt."+idx+".hrcx")); err != nil {
+			t.Fatalf("failed to remove shard %s: %v", idx, err)
+		}
 	}
 
 	out, err := runHrcx(t, "verify", shardDir)

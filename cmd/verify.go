@@ -49,6 +49,9 @@ func runVerifySingle(dir string) error {
 	}
 
 	if !r.Recoverable {
+		if quiet {
+			os.Exit(1)
+		}
 		return fmt.Errorf("file is not recoverable")
 	}
 	return nil
@@ -66,6 +69,9 @@ func runVerifyBatch(dir string) error {
 
 	for _, r := range results {
 		if !r.Recoverable {
+			if quiet {
+				os.Exit(1)
+			}
 			return fmt.Errorf("one or more files are not recoverable")
 		}
 	}
@@ -96,9 +102,10 @@ func printShardStatusLine(st pipeline.ShardStatus, hasManifest bool) {
 		return
 	}
 
-	fmt.Printf("  Shard %-3d %-30s %-7s header:%-7s payload:%-7s",
+	fmt.Printf("  Shard %-3d %-30s %-7s header:%-7s payload:%-7s consistency:%-7s",
 		st.Index, st.Filename, st.Type,
-		validityLabel(st.HeaderValid), validityLabel(st.PayloadValid))
+		validityLabel(st.HeaderValid), validityLabel(st.PayloadValid),
+		validityLabel(st.ConsistencyOK))
 
 	if hasManifest {
 		fmt.Printf(" manifest:%s", manifestHashLabel(st.ManifestHashOK))
