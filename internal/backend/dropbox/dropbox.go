@@ -40,14 +40,8 @@ func New(token, prefix string) *Dropbox {
 }
 
 func (d *Dropbox) remotePath(key string) string {
-	base := d.prefix
-	if base == "" {
-		base = "/"
-	}
-	if !strings.HasPrefix(base, "/") {
-		base = "/" + base
-	}
-	return strings.TrimRight(base, "/") + "/" + key
+	prefix := "/" + strings.Trim(d.prefix, "/")
+	return strings.TrimRight(prefix, "/") + "/" + key
 }
 
 func (d *Dropbox) Upload(ctx context.Context, localPath string, remoteKey string) error {
