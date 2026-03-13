@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/marmos91/horcrux/internal/manifest"
 	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/marmos91/horcrux/internal/shard"
 	"golang.org/x/sync/errgroup"
@@ -31,6 +32,7 @@ type SplitDirOptions struct {
 	Verbose      bool
 	Workers      int
 	FailFast     bool
+	NoManifest   bool
 	Progress     progress.Reporter
 }
 
@@ -50,10 +52,7 @@ type MergeDirOptions struct {
 // Output mirrors the input structure, with each file's shards placed in a
 // subdirectory named after the file.
 func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
+	workers := defaultWorkers(opts.Workers)
 
 	files, err := collectRegularFiles(opts.InputDir)
 	if err != nil {
@@ -81,18 +80,22 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 
 			// Output: outputDir/rel/dir/filename/ (shards go inside)
 			outSubDir := filepath.Join(opts.OutputDir, rel)
-			splitErr := Split(SplitOptions{
+			splitResult, splitErr := Split(SplitOptions{
 				InputFile:    file,
 				OutputDir:    outSubDir,
 				DataShards:   opts.DataShards,
 				ParityShards: opts.ParityShards,
 				Password:     opts.Password,
 				NoEncrypt:    opts.NoEncrypt,
+				NoManifest:   opts.NoManifest,
 				Verbose:      opts.Verbose,
 				Progress:     opts.Progress,
 			})
-			results[i].Error = splitErr
+			if splitErr == nil && !opts.NoManifest {
+				splitErr = SaveManifest(splitResult, outSubDir)
+			}
 
+			results[i].Error = splitErr
 			if splitErr != nil && opts.FailFast {
 				return splitErr
 			}
@@ -138,10 +141,7 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 		opts.OutputDir = "."
 	}
 
-	workers := opts.Workers
-	if workers <= 0 {
-		workers = runtime.NumCPU()
-	}
+	workers := defaultWorkers(opts.Workers)
 
 	// Resolve password once before dispatching workers
 	password := opts.Password
@@ -189,36 +189,10 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 				return ctx.Err()
 			}
 
-			// Discover original filename from shards to build output path
-			origName, nameErr := peekOriginalFilename(shardDir)
-			if nameErr != nil {
-				results[i].Error = nameErr
-				if opts.FailFast {
-					return nameErr
-				}
-				return nil
-			}
-
-			outDir := filepath.Join(opts.OutputDir, filepath.Dir(rel))
-			if err := os.MkdirAll(outDir, 0o755); err != nil {
-				results[i].Error = err
-				if opts.FailFast {
-					return err
-				}
-				return nil
-			}
-
-			mergeErr := Merge(MergeOptions{
-				ShardDir:   shardDir,
-				OutputFile: filepath.Join(outDir, origName),
-				Password:   password,
-				Verbose:    opts.Verbose,
-				Progress:   opts.Progress,
-			})
-			results[i].Error = mergeErr
-
-			if mergeErr != nil && opts.FailFast {
-				return mergeErr
+			opErr := mergeSingleDir(shardDir, rel, password, opts)
+			results[i].Error = opErr
+			if opErr != nil && opts.FailFast {
+				return opErr
 			}
 			return nil
 		})
@@ -229,6 +203,27 @@ func MergeDir(opts MergeDirOptions) ([]FileResult, error) {
 	}
 
 	return results, nil
+}
+
+// mergeSingleDir merges a single shard directory as part of a batch merge.
+func mergeSingleDir(shardDir, rel, password string, opts MergeDirOptions) error {
+	origName, err := peekOriginalFilename(shardDir)
+	if err != nil {
+		return err
+	}
+
+	outDir := filepath.Join(opts.OutputDir, filepath.Dir(rel))
+	if err := os.MkdirAll(outDir, 0o755); err != nil {
+		return err
+	}
+
+	return Merge(MergeOptions{
+		ShardDir:   shardDir,
+		OutputFile: filepath.Join(outDir, origName),
+		Password:   password,
+		Verbose:    opts.Verbose,
+		Progress:   opts.Progress,
+	})
 }
 
 // DryRunSplitDir computes dry-run results for all files in a directory.
@@ -306,6 +301,14 @@ func DryRunMergeDir(opts MergeDirOptions) ([]MergeDryRunResult, error) {
 	return results, nil
 }
 
+// defaultWorkers returns n if positive, otherwise runtime.NumCPU().
+func defaultWorkers(n int) int {
+	if n > 0 {
+		return n
+	}
+	return runtime.NumCPU()
+}
+
 // collectRegularFiles recursively collects all regular files in a directory tree.
 func collectRegularFiles(dir string) ([]string, error) {
 	var files []string
@@ -329,14 +332,14 @@ func collectRegularFiles(dir string) ([]string, error) {
 
 // findShardDirs recursively discovers all directories containing .hrcx files.
 func findShardDirs(root string) ([]string, error) {
-	dirSet := make(map[string]bool)
+	dirSet := make(map[string]struct{})
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && strings.HasSuffix(d.Name(), ".hrcx") {
-			dirSet[filepath.Dir(path)] = true
+			dirSet[filepath.Dir(path)] = struct{}{}
 		}
 		return nil
 	})
@@ -405,4 +408,11 @@ func peekOriginalFilename(dir string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("no valid .hrcx files in %s", dir)
+}
+
+// SaveManifest builds and saves a manifest for a single file's split result.
+func SaveManifest(result *SplitResult, outDir string) error {
+	m := result.BuildManifest()
+	manifestPath := filepath.Join(outDir, manifest.ManifestFilename(result.OriginalName))
+	return m.Save(manifestPath)
 }
