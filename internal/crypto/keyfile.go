@@ -56,9 +56,7 @@ func ReadKeyFile(path string) ([32]byte, error) {
 		return zero, fmt.Errorf("hashing key file: %w", err)
 	}
 
-	var result [32]byte
-	copy(result[:], h.Sum(nil))
-	return result, nil
+	return [32]byte(h.Sum(nil)), nil
 }
 
 // GenerateKeyFile creates a new key file with cryptographically random bytes.
@@ -89,8 +87,8 @@ func GenerateKeyFile(path string, size int) error {
 
 // CombinePasswordAndKeyFile combines a password with key file material using
 // HMAC-SHA256 for two-factor encryption mode.
-func CombinePasswordAndKeyFile(password string, keyFileMaterial [32]byte) []byte {
-	mac := hmac.New(sha256.New, keyFileMaterial[:])
+func CombinePasswordAndKeyFile(password string, keyFileMaterial []byte) []byte {
+	mac := hmac.New(sha256.New, keyFileMaterial)
 	mac.Write([]byte(password))
 	return mac.Sum(nil)
 }

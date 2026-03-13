@@ -1,6 +1,7 @@
 package crypto
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -105,8 +106,7 @@ func TestGenerateKeyFile_InvalidSize(t *testing.T) {
 }
 
 func TestCombinePasswordAndKeyFile(t *testing.T) {
-	var keyMaterial [32]byte
-	copy(keyMaterial[:], []byte("test key material 32 bytes long!"))
+	keyMaterial := []byte("test key material 32 bytes long!")
 
 	result := CombinePasswordAndKeyFile("password", keyMaterial)
 	if len(result) != 32 {
@@ -115,22 +115,13 @@ func TestCombinePasswordAndKeyFile(t *testing.T) {
 
 	// Deterministic
 	result2 := CombinePasswordAndKeyFile("password", keyMaterial)
-	for i := range result {
-		if result[i] != result2[i] {
-			t.Fatal("CombinePasswordAndKeyFile should be deterministic")
-		}
+	if !bytes.Equal(result, result2) {
+		t.Fatal("CombinePasswordAndKeyFile should be deterministic")
 	}
 
 	// Different password produces different result
 	result3 := CombinePasswordAndKeyFile("other-password", keyMaterial)
-	same := true
-	for i := range result {
-		if result[i] != result3[i] {
-			same = false
-			break
-		}
-	}
-	if same {
+	if bytes.Equal(result, result3) {
 		t.Fatal("different passwords should produce different results")
 	}
 }

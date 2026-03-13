@@ -87,9 +87,7 @@ func DeriveKeyWithMaterial(password string, keyFileMaterial []byte, salt [32]byt
 
 	switch {
 	case hasPassword && hasKeyFile:
-		var kfm [32]byte
-		copy(kfm[:], keyFileMaterial)
-		input = CombinePasswordAndKeyFile(password, kfm)
+		input = CombinePasswordAndKeyFile(password, keyFileMaterial)
 	case hasKeyFile:
 		input = keyFileMaterial
 	default:

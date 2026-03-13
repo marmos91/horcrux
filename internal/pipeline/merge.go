@@ -132,13 +132,14 @@ func Merge(opts MergeOptions) (err error) {
 		key = crypto.DeriveKeyWithMaterial(pwd, keyFileMaterial, ref.Salt, kdfParams)
 
 		if !crypto.VerifyPasswordTag(key, ref.PasswordTag) {
-			if needsKeyFile && needsPassword {
+			switch {
+			case needsKeyFile && needsPassword:
 				return fmt.Errorf("wrong password or key file")
-			}
-			if needsKeyFile {
+			case needsKeyFile:
 				return fmt.Errorf("wrong key file")
+			default:
+				return fmt.Errorf("wrong password")
 			}
-			return fmt.Errorf("wrong password")
 		}
 
 		if showVerbose {

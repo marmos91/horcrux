@@ -90,27 +90,27 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return runSplitDryRun(input)
 	}
 
-	// Resolve password once before any work
+	// Resolve password once before any work.
+	// Key file only: no password needed. Password provided via -p: use it directly.
+	// Otherwise: prompt interactively.
 	var pwd string
 	if !noEncrypt {
-		// If key file is provided without -p, skip password prompt (key-file-only mode).
-		// If both are provided, use two-factor mode.
-		// If neither key file nor -p, prompt for password (existing behavior).
-		if keyFile == "" || password != "" {
-			if password != "" {
-				pwd = password
-			} else {
-				pwd, err = promptPassword("Enter encryption password: ")
-				if err != nil {
-					return fmt.Errorf("failed to read password: %w", err)
-				}
-				confirm, err := promptPassword("Confirm password: ")
-				if err != nil {
-					return fmt.Errorf("failed to read password: %w", err)
-				}
-				if pwd != confirm {
-					return fmt.Errorf("passwords do not match")
-				}
+		switch {
+		case password != "":
+			pwd = password
+		case keyFile != "":
+			// Key-file-only mode: no password needed
+		default:
+			pwd, err = promptPassword("Enter encryption password: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
+			}
+			confirm, err := promptPassword("Confirm password: ")
+			if err != nil {
+				return fmt.Errorf("failed to read password: %w", err)
+			}
+			if pwd != confirm {
+				return fmt.Errorf("passwords do not match")
 			}
 		}
 	}

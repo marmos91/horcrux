@@ -130,20 +130,17 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		iv              [16]byte
 		pwTag           [8]byte
 		kdfParams       crypto.KDFParams
-		keyFileUsed     bool
 		keyFileMaterial []byte
 	)
 
 	encrypt := !opts.NoEncrypt
 	if encrypt {
-		// Read key file material if provided
 		if opts.KeyFile != "" {
 			kfHash, kfErr := crypto.ReadKeyFile(opts.KeyFile)
 			if kfErr != nil {
 				return nil, fmt.Errorf("reading key file: %w", kfErr)
 			}
 			keyFileMaterial = kfHash[:]
-			keyFileUsed = true
 		}
 
 		kdfParams = crypto.DefaultKDFParams()
@@ -179,7 +176,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 
 		if encrypt {
 			hdr.SetEncrypted(true)
-			if keyFileUsed {
+			if opts.KeyFile != "" {
 				hdr.SetKeyFileUsed(true)
 			}
 			if opts.Password != "" {
@@ -350,7 +347,7 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		DataShards:     opts.DataShards,
 		ParityShards:   opts.ParityShards,
 		Encrypted:      encrypt,
-		KeyFileUsed:    keyFileUsed,
+		KeyFileUsed:    encrypt && opts.KeyFile != "",
 		ShardFiles:     shardFiles,
 	}
 	if encrypt {

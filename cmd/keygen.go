@@ -31,10 +31,6 @@ func init() {
 }
 
 func runKeygen(cmd *cobra.Command, args []string) error {
-	if keygenSize < 1 || keygenSize > 1<<20 {
-		return fmt.Errorf("size must be between 1 and 1048576 bytes")
-	}
-
 	if err := crypto.GenerateKeyFile(keygenOutput, keygenSize); err != nil {
 		return err
 	}
