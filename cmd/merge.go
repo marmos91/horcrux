@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	_ "github.com/marmos91/horcrux/internal/backend/all"
 	"github.com/marmos91/horcrux/internal/manifest"
 	"github.com/marmos91/horcrux/internal/pipeline"
 	"github.com/marmos91/horcrux/internal/progress"
@@ -33,6 +35,7 @@ var (
 	mergeWorkers  int
 	mergeFailFast bool
 	mergeManifest string
+	collectRaw    []string
 )
 
 func init() {
@@ -41,11 +44,22 @@ func init() {
 	mergeCmd.Flags().IntVarP(&mergeWorkers, "workers", "w", runtime.NumCPU(), "Max parallel operations (batch mode)")
 	mergeCmd.Flags().BoolVar(&mergeFailFast, "fail-fast", false, "Stop on first error (batch mode)")
 	mergeCmd.Flags().StringVar(&mergeManifest, "manifest", "", "Manifest file for shard validation and output verification")
+	mergeCmd.Flags().StringSliceVar(&collectRaw, "collect", nil, "Backend URIs to collect shards from (comma-separated)")
 
 	rootCmd.AddCommand(mergeCmd)
 }
 
 func runMerge(cmd *cobra.Command, args []string) error {
+	// If --collect with --manifest, use manifest-guided collection
+	if len(collectRaw) > 0 && mergeManifest != "" {
+		return runCollectWithManifest()
+	}
+
+	// If --collect without manifest, use backend listing
+	if len(collectRaw) > 0 {
+		return runCollectFromBackends()
+	}
+
 	// Determine shard directory
 	var shardDir string
 	switch {
@@ -55,7 +69,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		// Derive shard dir from manifest's directory
 		shardDir = filepath.Dir(mergeManifest)
 	default:
-		return fmt.Errorf("requires a shard directory argument (or use --manifest)")
+		return fmt.Errorf("requires a shard directory argument (or use --manifest or --collect)")
 	}
 
 	if dryRun {
@@ -114,6 +128,72 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	}
 
 	return nil
+}
+
+// runCollectWithManifest downloads shards from their manifest Location fields,
+// then merges from the temp directory.
+func runCollectWithManifest() error {
+	mf, err := manifest.Load(mergeManifest)
+	if err != nil {
+		return fmt.Errorf("loading manifest: %w", err)
+	}
+
+	tempDir, err := os.MkdirTemp("", "hrcx-collect-*")
+	if err != nil {
+		return fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	if err := pipeline.CollectFromManifest(context.Background(), mf, tempDir); err != nil {
+		return fmt.Errorf("collecting shards: %w", err)
+	}
+
+	if err := mergeFromShardDir(tempDir); err != nil {
+		return err
+	}
+
+	outputPath := mergeOutput
+	if outputPath == "" {
+		outputPath = mf.Original.Filename
+		if err := validateBaseName(outputPath); err != nil {
+			return fmt.Errorf("unsafe filename in manifest: %w", err)
+		}
+	}
+	return verifyOutputAgainstManifest(mf, outputPath)
+}
+
+// runCollectFromBackends lists .hrcx files on each backend, downloads them,
+// then merges from the temp directory.
+func runCollectFromBackends() error {
+	tempDir, err := os.MkdirTemp("", "hrcx-collect-*")
+	if err != nil {
+		return fmt.Errorf("creating temp directory: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tempDir) }()
+
+	if err := pipeline.CollectFromBackends(context.Background(), collectRaw, tempDir); err != nil {
+		return fmt.Errorf("collecting shards: %w", err)
+	}
+
+	return mergeFromShardDir(tempDir)
+}
+
+// mergeFromShardDir runs a merge operation on the given shard directory
+// using the current command-line options.
+func mergeFromShardDir(shardDir string) error {
+	prog, cleanup := newProgressReporter()
+	defer cleanup()
+
+	return pipeline.Merge(pipeline.MergeOptions{
+		ShardDir:   shardDir,
+		OutputFile: mergeOutput,
+		Password:   mergePassword,
+		Verbose:    verbose && !quiet,
+		Progress:   prog,
+		PromptPassword: func() (string, error) {
+			return promptPassword("Enter decryption password: ")
+		},
+	})
 }
 
 func runMergeSingleDryRun(shardDir string) error {

@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
 
+	_ "github.com/marmos91/horcrux/internal/backend/all"
 	"github.com/marmos91/horcrux/internal/pipeline"
 	"github.com/marmos91/horcrux/internal/progress"
 	"github.com/spf13/cobra"
@@ -24,14 +26,16 @@ placed in a subdirectory named after the file.`,
 }
 
 var (
-	dataShards   int
-	parityShards int
-	outputDir    string
-	password     string
-	noEncrypt    bool
-	workers      int
-	failFast     bool
-	noManifest   bool
+	dataShards    int
+	parityShards  int
+	outputDir     string
+	password      string
+	noEncrypt     bool
+	workers       int
+	failFast      bool
+	noManifest    bool
+	distributeRaw []string
+	keepLocal     bool
 )
 
 func init() {
@@ -43,6 +47,8 @@ func init() {
 	splitCmd.Flags().IntVarP(&workers, "workers", "w", runtime.NumCPU(), "Max parallel operations (directory mode)")
 	splitCmd.Flags().BoolVar(&failFast, "fail-fast", false, "Stop on first error (directory mode)")
 	splitCmd.Flags().BoolVar(&noManifest, "no-manifest", false, "Don't generate a manifest file")
+	splitCmd.Flags().StringSliceVar(&distributeRaw, "distribute", nil, "Backend URIs for shard distribution (comma-separated)")
+	splitCmd.Flags().BoolVar(&keepLocal, "keep-local", true, "Keep local copies after distribution")
 
 	rootCmd.AddCommand(splitCmd)
 }
@@ -115,6 +121,25 @@ func runSplit(cmd *cobra.Command, args []string) error {
 	})
 	if err != nil {
 		return err
+	}
+
+	// Distribute shards to backends if requested
+	if len(distributeRaw) > 0 && result.ShardFiles != nil {
+		backends, err := pipeline.OpenBackends(distributeRaw)
+		if err != nil {
+			return err
+		}
+
+		result.ShardFiles, err = pipeline.DistributeShards(context.Background(), result.ShardFiles, backends)
+		if err != nil {
+			return err
+		}
+
+		if !keepLocal {
+			if err := pipeline.CleanupLocalShards(result.ShardFiles); err != nil {
+				return err
+			}
+		}
 	}
 
 	if noManifest {
