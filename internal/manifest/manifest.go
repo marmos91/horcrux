@@ -4,9 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
+
+// validHexSHA256 matches exactly 64 lowercase hex characters.
+var validHexSHA256 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // Manifest describes a set of shards produced by a split operation.
 type Manifest struct {
@@ -111,6 +115,9 @@ func (m *Manifest) Validate() error {
 	if m.Original.Filename == "" {
 		return fmt.Errorf("missing original filename")
 	}
+	if !validHexSHA256.MatchString(m.Original.SHA256) {
+		return fmt.Errorf("invalid original sha256: must be 64 lowercase hex characters")
+	}
 	if m.Erasure.TotalShards <= 0 {
 		return fmt.Errorf("total_shards must be > 0")
 	}
@@ -138,6 +145,12 @@ func (m *Manifest) Validate() error {
 		}
 		if s.Filename == "" {
 			return fmt.Errorf("shard %d has empty filename", i)
+		}
+		if !validHexSHA256.MatchString(s.SHA256) {
+			return fmt.Errorf("shard %d has invalid sha256: must be 64 lowercase hex characters", i)
+		}
+		if s.Size == 0 {
+			return fmt.Errorf("shard %d has zero size", i)
 		}
 	}
 	return nil

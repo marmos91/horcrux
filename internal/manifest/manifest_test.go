@@ -15,7 +15,7 @@ func sampleManifest() *Manifest {
 		Original: OriginalFile{
 			Filename: "secret.pdf",
 			Size:     15728640,
-			SHA256:   "a1b2c3d4e5f6",
+			SHA256:   "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90",
 		},
 		Erasure: ErasureConfig{
 			DataShards:        5,
@@ -34,14 +34,14 @@ func sampleManifest() *Manifest {
 			},
 		},
 		Shards: []ShardEntry{
-			{Index: 0, Type: "data", Filename: "secret.pdf.000.hrcx", Size: 3146080, SHA256: "aaa"},
-			{Index: 1, Type: "data", Filename: "secret.pdf.001.hrcx", Size: 3146080, SHA256: "bbb"},
-			{Index: 2, Type: "data", Filename: "secret.pdf.002.hrcx", Size: 3146080, SHA256: "ccc"},
-			{Index: 3, Type: "data", Filename: "secret.pdf.003.hrcx", Size: 3146080, SHA256: "ddd"},
-			{Index: 4, Type: "data", Filename: "secret.pdf.004.hrcx", Size: 3146080, SHA256: "eee"},
-			{Index: 5, Type: "parity", Filename: "secret.pdf.005.hrcx", Size: 3146080, SHA256: "fff"},
-			{Index: 6, Type: "parity", Filename: "secret.pdf.006.hrcx", Size: 3146080, SHA256: "ggg"},
-			{Index: 7, Type: "parity", Filename: "secret.pdf.007.hrcx", Size: 3146080, SHA256: "hhh"},
+			{Index: 0, Type: "data", Filename: "secret.pdf.000.hrcx", Size: 3146080, SHA256: "0000000000000000000000000000000000000000000000000000000000000000"},
+			{Index: 1, Type: "data", Filename: "secret.pdf.001.hrcx", Size: 3146080, SHA256: "1111111111111111111111111111111111111111111111111111111111111111"},
+			{Index: 2, Type: "data", Filename: "secret.pdf.002.hrcx", Size: 3146080, SHA256: "2222222222222222222222222222222222222222222222222222222222222222"},
+			{Index: 3, Type: "data", Filename: "secret.pdf.003.hrcx", Size: 3146080, SHA256: "3333333333333333333333333333333333333333333333333333333333333333"},
+			{Index: 4, Type: "data", Filename: "secret.pdf.004.hrcx", Size: 3146080, SHA256: "4444444444444444444444444444444444444444444444444444444444444444"},
+			{Index: 5, Type: "parity", Filename: "secret.pdf.005.hrcx", Size: 3146080, SHA256: "5555555555555555555555555555555555555555555555555555555555555555"},
+			{Index: 6, Type: "parity", Filename: "secret.pdf.006.hrcx", Size: 3146080, SHA256: "6666666666666666666666666666666666666666666666666666666666666666"},
+			{Index: 7, Type: "parity", Filename: "secret.pdf.007.hrcx", Size: 3146080, SHA256: "7777777777777777777777777777777777777777777777777777777777777777"},
 		},
 	}
 }
@@ -171,6 +171,38 @@ func TestValidate_MinShardsRequired(t *testing.T) {
 	m.Erasure.MinShardsRequired = 3
 	if err := m.Validate(); err == nil {
 		t.Fatal("expected error for wrong min_shards_required")
+	}
+}
+
+func TestValidate_InvalidOriginalSHA256(t *testing.T) {
+	m := sampleManifest()
+	m.Original.SHA256 = "not-a-valid-hash"
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected error for invalid original SHA256")
+	}
+}
+
+func TestValidate_EmptyOriginalSHA256(t *testing.T) {
+	m := sampleManifest()
+	m.Original.SHA256 = ""
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected error for empty original SHA256")
+	}
+}
+
+func TestValidate_InvalidShardSHA256(t *testing.T) {
+	m := sampleManifest()
+	m.Shards[0].SHA256 = "bad"
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected error for invalid shard SHA256")
+	}
+}
+
+func TestValidate_ZeroShardSize(t *testing.T) {
+	m := sampleManifest()
+	m.Shards[0].Size = 0
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected error for zero shard size")
 	}
 }
 

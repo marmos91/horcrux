@@ -102,10 +102,10 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	if mf != nil {
 		outputPath := mergeOutput
 		if outputPath == "" {
-			// Falling back to manifest's filename — validate it's safe
+			// Falling back to manifest's filename — validate it's a safe base name
 			outputPath = mf.Original.Filename
-			if filepath.IsAbs(outputPath) || strings.Contains(outputPath, "..") || strings.Contains(outputPath, "/") || strings.Contains(outputPath, "\\") {
-				return fmt.Errorf("unsafe filename in manifest: %q", outputPath)
+			if err := validateBaseName(outputPath); err != nil {
+				return fmt.Errorf("unsafe filename in manifest: %w", err)
 			}
 		}
 		if err := verifyOutputAgainstManifest(mf, outputPath); err != nil {
@@ -191,14 +191,25 @@ func validateShardsAgainstManifest(m *manifest.Manifest, shardDir string) {
 	}
 }
 
+// validateBaseName checks that name is a plain filename with no path components.
+func validateBaseName(name string) error {
+	if name == "" {
+		return fmt.Errorf("empty filename")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("unsafe filename %q", name)
+	}
+	if filepath.Base(name) != name {
+		return fmt.Errorf("unsafe filename %q (contains path components)", name)
+	}
+	return nil
+}
+
 // safeShardPath validates that a shard filename is a plain base name (no path
 // separators or traversal) and returns the joined path under shardDir.
 func safeShardPath(shardDir, filename string) (string, error) {
-	if filename == "" {
-		return "", fmt.Errorf("empty filename")
-	}
-	if filepath.IsAbs(filename) || strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
-		return "", fmt.Errorf("unsafe filename %q", filename)
+	if err := validateBaseName(filename); err != nil {
+		return "", err
 	}
 	joined := filepath.Join(shardDir, filename)
 	// Double-check the result stays under shardDir
