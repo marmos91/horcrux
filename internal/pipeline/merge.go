@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,7 @@ type MergeOptions struct {
 	Verbose        bool
 	Progress       progress.Reporter
 	PromptPassword func() (string, error)
+	CollectURIs    []string // Backend URIs to collect shards from before merging
 }
 
 // shardInfo holds a parsed shard's metadata and path.
@@ -41,6 +43,20 @@ type mergeFileEntry struct {
 
 // Merge reconstructs a file from shards.
 func Merge(opts MergeOptions) (err error) {
+	// If collect URIs are specified, download shards to a temp directory first
+	if len(opts.CollectURIs) > 0 {
+		tempDir, err := os.MkdirTemp("", "hrcx-collect-*")
+		if err != nil {
+			return fmt.Errorf("creating temp directory for collection: %w", err)
+		}
+		defer func() { _ = os.RemoveAll(tempDir) }()
+
+		if err := CollectFromBackends(context.Background(), opts.CollectURIs, tempDir); err != nil {
+			return fmt.Errorf("collecting shards: %w", err)
+		}
+		opts.ShardDir = tempDir
+	}
+
 	shards, err := DiscoverShards(opts.ShardDir)
 	if err != nil {
 		return err
