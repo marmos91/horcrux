@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/marmos91/horcrux/internal/backend"
+	"github.com/marmos91/horcrux/internal/config"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,10 +60,17 @@ type BackendWithURI struct {
 }
 
 // OpenBackends parses URIs and opens backend instances.
-func OpenBackends(uris []string) ([]BackendWithURI, error) {
+// If cfg is non-nil, backend-specific options (credentials, etc.) are merged from config.
+func OpenBackends(uris []string, cfg *config.BackendConfig) ([]BackendWithURI, error) {
 	backends := make([]BackendWithURI, 0, len(uris))
 	for _, uri := range uris {
-		b, err := backend.Open(uri, nil)
+		var b backend.Backend
+		var err error
+		if cfg != nil {
+			b, err = backend.NewFromConfig(uri, cfg)
+		} else {
+			b, err = backend.Open(uri, nil)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("opening backend %s: %w", uri, err)
 		}

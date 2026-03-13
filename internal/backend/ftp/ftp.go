@@ -24,6 +24,13 @@ func init() {
 		}
 
 		port := opts["port"]
+		// Parse port from host:port authority if not explicitly set
+		if port == "" {
+			if h, p, ok := strings.Cut(host, ":"); ok {
+				host = h
+				port = p
+			}
+		}
 		if port == "" {
 			port = "21"
 		}
@@ -169,8 +176,13 @@ func (f *FTP) List(_ context.Context, prefix string) ([]backend.RemoteFile, erro
 		if !strings.HasSuffix(entry.Name, ".hrcx") {
 			continue
 		}
+		// Include prefix in key so Download/Delete can resolve the full path
+		key := entry.Name
+		if prefix != "" {
+			key = prefix + "/" + entry.Name
+		}
 		files = append(files, backend.RemoteFile{
-			Key:  entry.Name,
+			Key:  key,
 			Size: int64(entry.Size),
 		})
 	}

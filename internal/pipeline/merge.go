@@ -51,7 +51,7 @@ func Merge(opts MergeOptions) (err error) {
 		}
 		defer func() { _ = os.RemoveAll(tempDir) }()
 
-		if err := CollectFromBackends(context.Background(), opts.CollectURIs, tempDir); err != nil {
+		if err := CollectFromBackends(context.Background(), opts.CollectURIs, tempDir, nil); err != nil {
 			return fmt.Errorf("collecting shards: %w", err)
 		}
 		opts.ShardDir = tempDir

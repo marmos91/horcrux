@@ -125,7 +125,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 
 	// Distribute shards to backends if requested
 	if len(distributeRaw) > 0 && result.ShardFiles != nil {
-		backends, err := pipeline.OpenBackends(distributeRaw)
+		backends, err := pipeline.OpenBackends(distributeRaw, loadedBackendConfig)
 		if err != nil {
 			return err
 		}

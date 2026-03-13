@@ -60,6 +60,20 @@ func TestParseURI(t *testing.T) {
 			raw:     "://bucket",
 			wantErr: true,
 		},
+		{
+			name:   "ftp with host and port in authority",
+			raw:    "ftp://example.com:2121/uploads/shards",
+			scheme: "ftp",
+			bucket: "example.com:2121",
+			path:   "uploads/shards",
+		},
+		{
+			name:   "ftp with host only",
+			raw:    "ftp://example.com/shards",
+			scheme: "ftp",
+			bucket: "example.com",
+			path:   "shards",
+		},
 	}
 
 	for _, tt := range tests {

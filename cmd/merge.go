@@ -50,6 +50,11 @@ func init() {
 }
 
 func runMerge(cmd *cobra.Command, args []string) error {
+	// --collect is incompatible with --dry-run (it downloads real files)
+	if len(collectRaw) > 0 && dryRun {
+		return fmt.Errorf("--dry-run is not supported with --collect (collection downloads real files)")
+	}
+
 	// If --collect with --manifest, use manifest-guided collection
 	if len(collectRaw) > 0 && mergeManifest != "" {
 		return runCollectWithManifest()
@@ -164,7 +169,7 @@ func runCollectFromBackends() error {
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	if err := pipeline.CollectFromBackends(context.Background(), collectRaw, tempDir); err != nil {
+	if err := pipeline.CollectFromBackends(context.Background(), collectRaw, tempDir, loadedBackendConfig); err != nil {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
 

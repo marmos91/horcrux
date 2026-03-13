@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/marmos91/horcrux/internal/backend"
 )
@@ -35,11 +36,14 @@ func New(token, prefix string) *Dropbox {
 	return &Dropbox{
 		token:  token,
 		prefix: prefix,
-		client: &http.Client{},
+		client: &http.Client{Timeout: 5 * time.Minute},
 	}
 }
 
 func (d *Dropbox) remotePath(key string) string {
+	if d.prefix == "" {
+		return "/" + key
+	}
 	return "/" + strings.Trim(d.prefix, "/") + "/" + key
 }
 
@@ -163,6 +167,12 @@ func (d *Dropbox) List(ctx context.Context, prefix string) ([]backend.RemoteFile
 		resp, err := d.client.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("listing Dropbox folder: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			return nil, fmt.Errorf("Dropbox list failed (status %d): %s", resp.StatusCode, respBody)
 		}
 
 		var result listFolderResponse

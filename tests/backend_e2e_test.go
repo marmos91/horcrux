@@ -52,7 +52,7 @@ func TestBackendE2E_SplitDistributeCollectMerge(t *testing.T) {
 	uriA := "file://" + backendA
 	uriB := "file://" + backendB
 
-	backends, err := pipeline.OpenBackends([]string{uriA, uriB})
+	backends, err := pipeline.OpenBackends([]string{uriA, uriB}, nil)
 	if err != nil {
 		t.Fatalf("OpenBackends: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestBackendE2E_CollectFromBackends(t *testing.T) {
 	remoteDir := t.TempDir()
 	uri := "file://" + remoteDir
 
-	backends, err := pipeline.OpenBackends([]string{uri})
+	backends, err := pipeline.OpenBackends([]string{uri}, nil)
 	if err != nil {
 		t.Fatalf("OpenBackends: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestBackendE2E_CollectFromBackends(t *testing.T) {
 
 	// Collect without manifest (listing-based)
 	collectDir := t.TempDir()
-	if err := pipeline.CollectFromBackends(context.Background(), []string{uri}, collectDir); err != nil {
+	if err := pipeline.CollectFromBackends(context.Background(), []string{uri}, collectDir, nil); err != nil {
 		t.Fatalf("CollectFromBackends: %v", err)
 	}
 
@@ -218,7 +218,7 @@ func TestBackendE2E_CleanupLocalShards(t *testing.T) {
 	}
 
 	remoteDir := t.TempDir()
-	backends, err := pipeline.OpenBackends([]string{"file://" + remoteDir})
+	backends, err := pipeline.OpenBackends([]string{"file://" + remoteDir}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
