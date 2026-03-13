@@ -1344,3 +1344,143 @@ func TestE2E_SplitDryRunNoManifest(t *testing.T) {
 		t.Errorf("expected 'Manifest:     disabled' in dry-run output, got: %s", out)
 	}
 }
+
+// --- QR Code Export/Import E2E tests ---
+
+func TestE2E_ExportImportQR_RoundTrip(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := testdataPath("small.txt")
+	shardDir := filepath.Join(tmpDir, "shards")
+	qrDir := filepath.Join(tmpDir, "qrcodes")
+	recoveredShards := filepath.Join(tmpDir, "recovered-shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+
+	// Split with many data shards (small shard size) and high parity to tolerate
+	// occasional QR decode failures in the gozxing library.
+	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "-p", "test123", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Export shards as QR codes
+	out, err := runHrcx(t, "export-qr", "-o", qrDir, shardDir)
+	if err != nil {
+		t.Fatalf("export-qr failed: %v\n%s", err, out)
+	}
+
+	// Verify QR code files were created
+	entries, err := os.ReadDir(qrDir)
+	if err != nil {
+		t.Fatalf("cannot read QR output dir: %v", err)
+	}
+	pngCount := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".png") {
+			pngCount++
+		}
+	}
+	if pngCount == 0 {
+		t.Fatal("no PNG files created by export-qr")
+	}
+
+	// Import QR codes back to shard files
+	out, err = runHrcx(t, "import-qr", "-o", recoveredShards, qrDir)
+	if err != nil {
+		t.Fatalf("import-qr failed: %v\n%s", err, out)
+	}
+
+	// Merge recovered shards
+	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, recoveredShards); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	// Verify SHA-256 match
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch after QR round-trip")
+	}
+}
+
+func TestE2E_ExportQR_OversizedShard(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := filepath.Join(tmpDir, "large.bin")
+	createRandomFile(t, input, 10*1024) // 10KB
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	// Split with few data shards so each shard is large
+	if _, err := runHrcx(t, "split", "-n", "2", "--no-encrypt", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// export-qr should fail because shards are too large
+	out, err := runHrcx(t, "export-qr", shardDir)
+	if err == nil {
+		t.Fatal("expected export-qr to fail with oversized shards")
+	}
+	if !strings.Contains(out, "exceed QR code capacity") {
+		t.Fatalf("expected capacity error message, got: %s", out)
+	}
+	if !strings.Contains(out, "more data shards") {
+		t.Fatalf("expected hint about more data shards, got: %s", out)
+	}
+}
+
+func TestE2E_ExportQR_SVG(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := testdataPath("small.txt")
+	shardDir := filepath.Join(tmpDir, "shards")
+	qrDir := filepath.Join(tmpDir, "qrcodes")
+
+	// Split with many data shards to keep each shard small
+	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Export as SVG
+	out, err := runHrcx(t, "export-qr", "-f", "svg", "-o", qrDir, shardDir)
+	if err != nil {
+		t.Fatalf("export-qr --format svg failed: %v\n%s", err, out)
+	}
+
+	// Verify SVG files were created
+	entries, err := os.ReadDir(qrDir)
+	if err != nil {
+		t.Fatalf("cannot read QR output dir: %v", err)
+	}
+	svgCount := 0
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".svg") {
+			svgCount++
+		}
+	}
+	if svgCount == 0 {
+		t.Fatal("no SVG files created by export-qr --format svg")
+	}
+}
+
+func TestE2E_ExportQR_NoEncryption(t *testing.T) {
+	tmpDir := t.TempDir()
+	input := testdataPath("small.txt")
+	shardDir := filepath.Join(tmpDir, "shards")
+	qrDir := filepath.Join(tmpDir, "qrcodes")
+	recoveredShards := filepath.Join(tmpDir, "recovered-shards")
+	output := filepath.Join(tmpDir, "recovered.txt")
+
+	// Split without encryption, high parity to tolerate QR decode failures
+	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt", "-o", shardDir, input); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+
+	// Export → Import round-trip
+	if _, err := runHrcx(t, "export-qr", "-o", qrDir, shardDir); err != nil {
+		t.Fatalf("export-qr failed: %v", err)
+	}
+	if _, err := runHrcx(t, "import-qr", "-o", recoveredShards, qrDir); err != nil {
+		t.Fatalf("import-qr failed: %v", err)
+	}
+	if _, err := runHrcx(t, "merge", "-o", output, recoveredShards); err != nil {
+		t.Fatalf("merge failed: %v", err)
+	}
+
+	if fileSHA256(t, input) != fileSHA256(t, output) {
+		t.Fatal("SHA-256 mismatch after unencrypted QR round-trip")
+	}
+}
