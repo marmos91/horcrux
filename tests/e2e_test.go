@@ -1484,3 +1484,141 @@ func TestE2E_ExportQR_NoEncryption(t *testing.T) {
 		t.Fatal("SHA-256 mismatch after unencrypted QR round-trip")
 	}
 }
+
+// --- Verify E2E tests ---
+
+// splitForVerify is a helper that splits testdata/small.txt and returns the shard directory.
+func splitForVerify(t *testing.T, dataShards, parityShards int) string {
+	t.Helper()
+	shardDir := filepath.Join(t.TempDir(), "shards")
+	if _, err := runHrcx(t, "split",
+		"-n", fmt.Sprintf("%d", dataShards),
+		"-k", fmt.Sprintf("%d", parityShards),
+		"--no-encrypt", "-o", shardDir, testdataPath("small.txt")); err != nil {
+		t.Fatalf("split failed: %v", err)
+	}
+	return shardDir
+}
+
+// corruptPayloadAt corrupts bytes in the payload section of a shard file.
+func corruptPayloadAt(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.Seek(int64(shard.HeaderSize)+4, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte{0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertOutputContains checks that output contains all expected substrings.
+func assertOutputContains(t *testing.T, output string, expected []string) {
+	t.Helper()
+	for _, s := range expected {
+		if !strings.Contains(output, s) {
+			t.Errorf("output missing %q\nGot: %s", s, output)
+		}
+	}
+}
+
+func TestE2E_Verify_AllValid(t *testing.T) {
+	shardDir := splitForVerify(t, 5, 3)
+
+	out, err := runHrcx(t, "verify", shardDir)
+	if err != nil {
+		t.Fatalf("verify failed: %v\n%s", err, out)
+	}
+
+	assertOutputContains(t, out, []string{
+		"Verify: small.txt",
+		"8 of 8 found",
+		"Valid:      8",
+		"Corrupt:    none",
+		"Missing:    none",
+		"RECOVERABLE",
+	})
+}
+
+func TestE2E_Verify_CorruptShard(t *testing.T) {
+	shardDir := splitForVerify(t, 5, 3)
+
+	corruptPayloadAt(t, filepath.Join(shardDir, "small.txt.002.hrcx"))
+
+	out, err := runHrcx(t, "verify", shardDir)
+	if err != nil {
+		t.Fatalf("verify failed: %v\n%s", err, out)
+	}
+
+	assertOutputContains(t, out, []string{"Corrupt:", "RECOVERABLE"})
+}
+
+func TestE2E_Verify_Unrecoverable(t *testing.T) {
+	shardDir := splitForVerify(t, 5, 3)
+
+	for _, idx := range []string{"001", "003", "005", "007"} {
+		_ = os.Remove(filepath.Join(shardDir, "small.txt."+idx+".hrcx"))
+	}
+
+	out, err := runHrcx(t, "verify", shardDir)
+	if err == nil {
+		t.Fatal("expected verify to fail (not recoverable)")
+	}
+
+	assertOutputContains(t, out, []string{"NOT RECOVERABLE"})
+}
+
+func TestE2E_Verify_Verbose(t *testing.T) {
+	shardDir := splitForVerify(t, 3, 2)
+
+	out, err := runHrcx(t, "verify", "-v", shardDir)
+	if err != nil {
+		t.Fatalf("verify -v failed: %v\n%s", err, out)
+	}
+
+	for i := range 5 {
+		expected := fmt.Sprintf("Shard %d", i)
+		if !strings.Contains(out, expected) {
+			t.Errorf("verbose output missing %q\nGot: %s", expected, out)
+		}
+	}
+
+	assertOutputContains(t, out, []string{"header:", "payload:"})
+}
+
+func TestE2E_Verify_BatchDir(t *testing.T) {
+	tmpDir := t.TempDir()
+	inputDir := filepath.Join(tmpDir, "input")
+	shardDir := filepath.Join(tmpDir, "shards")
+
+	createTestFile(t, filepath.Join(inputDir, "a.txt"), "file a content")
+	createTestFile(t, filepath.Join(inputDir, "b.txt"), "file b content")
+
+	if _, err := runHrcx(t, "split", "--no-encrypt", "-o", shardDir, inputDir); err != nil {
+		t.Fatalf("split dir failed: %v", err)
+	}
+
+	out, err := runHrcx(t, "verify", shardDir)
+	if err != nil {
+		t.Fatalf("verify batch failed: %v\n%s", err, out)
+	}
+
+	assertOutputContains(t, out, []string{"a.txt", "b.txt", "2 files", "recoverable"})
+}
+
+func TestE2E_Verify_EmptyDir(t *testing.T) {
+	emptyDir := filepath.Join(t.TempDir(), "empty")
+	_ = os.MkdirAll(emptyDir, 0755)
+
+	out, err := runHrcx(t, "verify", emptyDir)
+	if err == nil {
+		t.Fatal("expected error for empty directory")
+	}
+	if !strings.Contains(out, "no valid") && !strings.Contains(out, "no shard") {
+		t.Errorf("expected error about no shards found, got: %s", out)
+	}
+}
