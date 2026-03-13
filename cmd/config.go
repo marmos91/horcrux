@@ -60,11 +60,11 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
 
-	if err := os.MkdirAll(filepath.Dir(cfgPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfgPath), 0o755); err != nil {
 		return fmt.Errorf("creating config directory: %w", err)
 	}
 
-	if err := os.WriteFile(cfgPath, data, 0644); err != nil {
+	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}
 

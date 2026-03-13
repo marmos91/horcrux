@@ -39,8 +39,6 @@ func TestBackendE2E_SplitDistributeCollectMerge(t *testing.T) {
 		DataShards:   3,
 		ParityShards: 2,
 		Password:     "testpass",
-		NoEncrypt:    false,
-		NoManifest:   false,
 	})
 	if err != nil {
 		t.Fatalf("Split: %v", err)
@@ -159,7 +157,6 @@ func TestBackendE2E_CollectFromBackends(t *testing.T) {
 		DataShards:   2,
 		ParityShards: 1,
 		NoEncrypt:    true,
-		NoManifest:   false,
 	})
 	if err != nil {
 		t.Fatalf("Split: %v", err)
@@ -215,7 +212,6 @@ func TestBackendE2E_CleanupLocalShards(t *testing.T) {
 		DataShards:   2,
 		ParityShards: 1,
 		NoEncrypt:    true,
-		NoManifest:   false,
 	})
 	if err != nil {
 		t.Fatalf("Split: %v", err)

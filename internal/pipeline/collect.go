@@ -13,8 +13,8 @@ import (
 )
 
 // CollectFromManifest downloads shards listed in a manifest from their Location
-// fields. Only shards with a non-empty Location are downloaded. Returns the
-// temp directory containing the downloaded shard files.
+// fields into tempDir. Only shards with a non-empty Location are downloaded.
+// Each downloaded shard is verified against its expected SHA-256 hash.
 func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir string) error {
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -100,16 +100,17 @@ func openBackendForLocation(location string) (backend.Backend, string, error) {
 	remoteKey := path.Base(uriPath)
 	prefix := strings.TrimSuffix(strings.TrimSuffix(uriPath, remoteKey), "/")
 
-	var baseURI string
-	switch {
-	case bucket != "" && prefix != "":
-		baseURI = fmt.Sprintf("%s://%s/%s", scheme, bucket, prefix)
-	case bucket != "":
-		baseURI = fmt.Sprintf("%s://%s", scheme, bucket)
-	case prefix != "":
-		baseURI = fmt.Sprintf("%s://%s", scheme, prefix)
-	default:
-		baseURI = fmt.Sprintf("%s:///", scheme)
+	// Reconstruct the base URI without the filename.
+	// For bucket-based schemes: scheme://bucket[/prefix]
+	// For path-based schemes:   scheme:///prefix
+	baseURI := scheme + "://"
+	if bucket != "" {
+		baseURI += bucket
+		if prefix != "" {
+			baseURI += "/" + prefix
+		}
+	} else {
+		baseURI += "/" + prefix
 	}
 
 	b, err := backend.Open(baseURI, nil)

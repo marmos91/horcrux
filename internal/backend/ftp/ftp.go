@@ -150,11 +150,7 @@ func (f *FTP) List(_ context.Context, prefix string) ([]backend.RemoteFile, erro
 
 	dir := f.prefix
 	if prefix != "" {
-		if dir != "" {
-			dir = path.Join(dir, prefix)
-		} else {
-			dir = prefix
-		}
+		dir = path.Join(dir, prefix)
 	}
 	if dir == "" {
 		dir = "."

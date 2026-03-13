@@ -24,13 +24,13 @@ func DistributeShards(ctx context.Context, shardFiles []ShardFileInfo, backends 
 
 	for i := range result {
 		bk := backends[i%len(backends)]
-		remoteKey := result[i].Filename
+		sf := &result[i]
 
 		g.Go(func() error {
-			if err := bk.Backend.Upload(ctx, result[i].Path, remoteKey); err != nil {
-				return fmt.Errorf("uploading shard %d to %s: %w", result[i].Index, bk.URI, err)
+			if err := bk.Backend.Upload(ctx, sf.Path, sf.Filename); err != nil {
+				return fmt.Errorf("uploading shard %d to %s: %w", sf.Index, bk.URI, err)
 			}
-			result[i].Location = bk.URI + "/" + remoteKey
+			sf.Location = bk.URI + "/" + sf.Filename
 			return nil
 		})
 	}

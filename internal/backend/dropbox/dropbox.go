@@ -40,8 +40,7 @@ func New(token, prefix string) *Dropbox {
 }
 
 func (d *Dropbox) remotePath(key string) string {
-	prefix := "/" + strings.Trim(d.prefix, "/")
-	return strings.TrimRight(prefix, "/") + "/" + key
+	return "/" + strings.Trim(d.prefix, "/") + "/" + key
 }
 
 func (d *Dropbox) Upload(ctx context.Context, localPath string, remoteKey string) error {
@@ -132,21 +131,17 @@ type listEntry struct {
 }
 
 func (d *Dropbox) List(ctx context.Context, prefix string) ([]backend.RemoteFile, error) {
-	path := d.prefix
+	listPath := d.prefix
 	if prefix != "" {
-		if path != "" {
-			path = strings.TrimRight(path, "/") + "/" + prefix
-		} else {
-			path = prefix
-		}
+		listPath = strings.TrimRight(listPath, "/") + "/" + prefix
 	}
-	if !strings.HasPrefix(path, "/") {
-		path = "/" + path
+	if !strings.HasPrefix(listPath, "/") {
+		listPath = "/" + listPath
 	}
-	path = strings.TrimRight(path, "/")
+	listPath = strings.TrimRight(listPath, "/")
 
 	body := map[string]any{
-		"path":                                path,
+		"path":                                listPath,
 		"recursive":                           false,
 		"include_media_info":                  false,
 		"include_deleted":                     false,

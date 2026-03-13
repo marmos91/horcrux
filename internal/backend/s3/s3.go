@@ -118,14 +118,7 @@ func (s *S3) Download(ctx context.Context, remoteKey string, localPath string) e
 }
 
 func (s *S3) List(ctx context.Context, prefix string) ([]backend.RemoteFile, error) {
-	fullPrefix := s.prefix
-	if prefix != "" {
-		if fullPrefix != "" {
-			fullPrefix += "/" + prefix
-		} else {
-			fullPrefix = prefix
-		}
-	}
+	fullPrefix := backend.JoinPrefix(s.prefix, prefix)
 
 	var files []backend.RemoteFile
 	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{

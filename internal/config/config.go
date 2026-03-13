@@ -149,23 +149,20 @@ func (c *Config) Validate() error {
 
 // Validate checks that backend configuration values are reasonable.
 func (b *BackendConfig) Validate() error {
-	if b.FTP != nil && b.FTP.Port != nil {
-		if *b.FTP.Port < 1 || *b.FTP.Port > 65535 {
-			return fmt.Errorf("ftp port must be between 1 and 65535, got %d", *b.FTP.Port)
-		}
+	if b.FTP != nil && b.FTP.Port != nil && (*b.FTP.Port < 1 || *b.FTP.Port > 65535) {
+		return fmt.Errorf("ftp port must be between 1 and 65535, got %d", *b.FTP.Port)
 	}
 	return nil
 }
 
 // DefaultConfig returns a Config with all fields populated with defaults.
 func DefaultConfig() *Config {
-	workers := runtime.NumCPU()
 	return &Config{
 		DataShards:   ptr(5),
 		ParityShards: ptr(3),
 		Output:       ptr("."),
 		NoEncrypt:    ptr(false),
-		Workers:      &workers,
+		Workers:      ptr(runtime.NumCPU()),
 		FailFast:     ptr(false),
 		NoManifest:   ptr(false),
 	}

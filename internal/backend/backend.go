@@ -193,3 +193,15 @@ func envOverride(opts map[string]string, key, envVar string) {
 		opts[key] = v
 	}
 }
+
+// JoinPrefix combines a base prefix and a sub-prefix with a "/" separator.
+// Returns the non-empty part if the other is empty.
+func JoinPrefix(base, sub string) string {
+	if sub == "" {
+		return base
+	}
+	if base == "" {
+		return sub
+	}
+	return base + "/" + sub
+}

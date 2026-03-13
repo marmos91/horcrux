@@ -96,14 +96,7 @@ func (a *Azure) Download(ctx context.Context, remoteKey string, localPath string
 }
 
 func (a *Azure) List(ctx context.Context, prefix string) ([]backend.RemoteFile, error) {
-	fullPrefix := a.prefix
-	if prefix != "" {
-		if fullPrefix != "" {
-			fullPrefix += "/" + prefix
-		} else {
-			fullPrefix = prefix
-		}
-	}
+	fullPrefix := backend.JoinPrefix(a.prefix, prefix)
 
 	var files []backend.RemoteFile
 	pager := a.client.NewListBlobsFlatPager(a.container, &azblob.ListBlobsFlatOptions{

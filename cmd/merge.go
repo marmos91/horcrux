@@ -114,13 +114,9 @@ func runMerge(cmd *cobra.Command, args []string) error {
 
 	// If manifest was provided, verify the output file hash
 	if mf != nil {
-		outputPath := mergeOutput
-		if outputPath == "" {
-			// Falling back to manifest's filename — validate it's a safe base name
-			outputPath = mf.Original.Filename
-			if err := validateBaseName(outputPath); err != nil {
-				return fmt.Errorf("unsafe filename in manifest: %w", err)
-			}
+		outputPath, err := resolveOutputPath(mf)
+		if err != nil {
+			return err
 		}
 		if err := verifyOutputAgainstManifest(mf, outputPath); err != nil {
 			return err
@@ -152,12 +148,9 @@ func runCollectWithManifest() error {
 		return err
 	}
 
-	outputPath := mergeOutput
-	if outputPath == "" {
-		outputPath = mf.Original.Filename
-		if err := validateBaseName(outputPath); err != nil {
-			return fmt.Errorf("unsafe filename in manifest: %w", err)
-		}
+	outputPath, err := resolveOutputPath(mf)
+	if err != nil {
+		return err
 	}
 	return verifyOutputAgainstManifest(mf, outputPath)
 }
@@ -310,6 +303,18 @@ func safeShardPath(shardDir, filename string) (string, error) {
 		return "", fmt.Errorf("resolved path escapes shard directory")
 	}
 	return joined, nil
+}
+
+// resolveOutputPath returns the output file path, falling back to the manifest's
+// original filename when no explicit output was specified.
+func resolveOutputPath(mf *manifest.Manifest) (string, error) {
+	if mergeOutput != "" {
+		return mergeOutput, nil
+	}
+	if err := validateBaseName(mf.Original.Filename); err != nil {
+		return "", fmt.Errorf("unsafe filename in manifest: %w", err)
+	}
+	return mf.Original.Filename, nil
 }
 
 // verifyOutputAgainstManifest checks the reconstructed file's SHA-256 against the manifest.
