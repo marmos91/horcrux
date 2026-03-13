@@ -22,8 +22,9 @@ var exportQRCmd = &cobra.Command{
 	Use:   "export-qr <shard-dir>",
 	Short: "Export shards as QR codes for paper backup",
 	Long: `Export shards as QR codes that can be printed and stored in physically
-separate locations. QR binary mode supports up to 2953 bytes per code, so
-this works best with high data-shard counts to keep individual shards small.
+separate locations. After base64 encoding, each QR code supports up to ~2.2 KB
+of raw shard data, so this works best with high data-shard counts to keep
+individual shards small.
 
 Supported output formats: png (default), svg.`,
 	Args: cobra.ExactArgs(1),
