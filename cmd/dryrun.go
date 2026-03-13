@@ -12,6 +12,9 @@ func printSplitDryRun(r *pipeline.SplitDryRunResult) {
 	fmt.Println("Dry run: split")
 	fmt.Printf("  Input:        %s (%s)\n", r.OriginalName, display.FormatSize(r.OriginalSize))
 	fmt.Printf("  Encryption:   %s\n", enabledLabel(r.Encrypted))
+	if r.KeyFileUsed {
+		fmt.Printf("  Key file:     yes\n")
+	}
 	fmt.Printf("  Shards:       %d data + %d parity = %d total\n", r.DataShards, r.ParityShards, r.TotalShards)
 	fmt.Printf("  Per shard:    %s payload (%s on disk)\n", display.FormatSize(r.PerShardPayload), display.FormatSize(r.PerShardFileSize))
 	fmt.Printf("  Total output: %s\n", display.FormatSize(r.TotalOutputSize))
@@ -37,6 +40,9 @@ func printMergeDryRun(r *pipeline.MergeDryRunResult) {
 	fmt.Println("Dry run: merge")
 	fmt.Printf("  Original file:    %s (%s)\n", r.OriginalName, display.FormatSize(r.OriginalSize))
 	fmt.Printf("  Encryption:       %s\n", enabledLabel(r.Encrypted))
+	if r.UsesKeyFile {
+		fmt.Printf("  Key file:         required\n")
+	}
 	fmt.Printf("  Shards:           %d of %d found (%d required)\n", r.ShardsFound, r.TotalShards, r.DataShards)
 	fmt.Printf("  Valid shards:     %d of %d (checksums OK)\n", r.ShardsValid, r.ShardsFound)
 	fmt.Printf("  Missing:          %s\n", indicesLabel(r.MissingIndices))

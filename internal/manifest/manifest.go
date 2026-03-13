@@ -41,10 +41,11 @@ type ErasureConfig struct {
 // EncryptionInfo records the encryption algorithm and KDF parameters.
 // Never contains secrets (no salt, IV, or key material).
 type EncryptionInfo struct {
-	Encrypted bool       `json:"encrypted"`
-	Algorithm string     `json:"algorithm,omitempty"`
-	KDF       string     `json:"kdf,omitempty"`
-	KDFParams *KDFParams `json:"kdf_params,omitempty"`
+	Encrypted   bool       `json:"encrypted"`
+	KeyFileUsed bool       `json:"key_file_used,omitempty"`
+	Algorithm   string     `json:"algorithm,omitempty"`
+	KDF         string     `json:"kdf,omitempty"`
+	KDFParams   *KDFParams `json:"kdf_params,omitempty"`
 }
 
 // KDFParams records the Argon2id parameters used for key derivation.

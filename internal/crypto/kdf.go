@@ -73,6 +73,39 @@ func PasswordTag(key []byte) [8]byte {
 	return tag
 }
 
+// DeriveKeyWithMaterial derives a 32-byte key using either a password, key file
+// material, or both (two-factor). The Argon2 input is selected based on which
+// credentials are provided:
+//   - password only: Argon2(password)
+//   - key file only: Argon2(SHA256(keyfile))
+//   - both (two-factor): Argon2(HMAC-SHA256(key=keyFileMaterial, data=password))
+func DeriveKeyWithMaterial(password string, keyFileMaterial []byte, salt [32]byte, params KDFParams) []byte {
+	var input []byte
+
+	hasPassword := password != ""
+	hasKeyFile := len(keyFileMaterial) > 0
+
+	switch {
+	case hasPassword && hasKeyFile:
+		var kfm [32]byte
+		copy(kfm[:], keyFileMaterial)
+		input = CombinePasswordAndKeyFile(password, kfm)
+	case hasKeyFile:
+		input = keyFileMaterial
+	default:
+		input = []byte(password)
+	}
+
+	return argon2.IDKey(
+		input,
+		salt[:],
+		params.Time,
+		params.Memory,
+		params.Parallelism,
+		KeyLen,
+	)
+}
+
 // VerifyPasswordTag checks if the given tag matches the expected tag for the key.
 func VerifyPasswordTag(key []byte, expected [8]byte) bool {
 	computed := PasswordTag(key)

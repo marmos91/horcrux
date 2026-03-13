@@ -29,6 +29,7 @@ var (
 	parityShards  int
 	outputDir     string
 	password      string
+	keyFile       string
 	noEncrypt     bool
 	workers       int
 	failFast      bool
@@ -42,6 +43,7 @@ func init() {
 	splitCmd.Flags().IntVarP(&parityShards, "parity-shards", "k", 3, "Number of parity shards")
 	splitCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Output directory")
 	splitCmd.Flags().StringVarP(&password, "password", "p", "", "Encryption password (omit for interactive prompt)")
+	splitCmd.Flags().StringVar(&keyFile, "key-file", "", "Key file for encryption (use alone or with -p for two-factor)")
 	splitCmd.Flags().BoolVar(&noEncrypt, "no-encrypt", false, "Skip encryption")
 	splitCmd.Flags().IntVarP(&workers, "workers", "w", runtime.NumCPU(), "Max parallel operations (directory mode)")
 	splitCmd.Flags().BoolVar(&failFast, "fail-fast", false, "Stop on first error (directory mode)")
@@ -77,6 +79,10 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--distribute is not supported with directory input (split individual files instead)")
 	}
 
+	if keyFile != "" && noEncrypt {
+		return fmt.Errorf("--key-file cannot be used with --no-encrypt")
+	}
+
 	if dryRun {
 		if info.IsDir() {
 			return runSplitDirDryRun(input)
@@ -87,19 +93,24 @@ func runSplit(cmd *cobra.Command, args []string) error {
 	// Resolve password once before any work
 	var pwd string
 	if !noEncrypt {
-		if password != "" {
-			pwd = password
-		} else {
-			pwd, err = promptPassword("Enter encryption password: ")
-			if err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
-			}
-			confirm, err := promptPassword("Confirm password: ")
-			if err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
-			}
-			if pwd != confirm {
-				return fmt.Errorf("passwords do not match")
+		// If key file is provided without -p, skip password prompt (key-file-only mode).
+		// If both are provided, use two-factor mode.
+		// If neither key file nor -p, prompt for password (existing behavior).
+		if keyFile == "" || password != "" {
+			if password != "" {
+				pwd = password
+			} else {
+				pwd, err = promptPassword("Enter encryption password: ")
+				if err != nil {
+					return fmt.Errorf("failed to read password: %w", err)
+				}
+				confirm, err := promptPassword("Confirm password: ")
+				if err != nil {
+					return fmt.Errorf("failed to read password: %w", err)
+				}
+				if pwd != confirm {
+					return fmt.Errorf("passwords do not match")
+				}
 			}
 		}
 	}
@@ -117,6 +128,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		DataShards:   dataShards,
 		ParityShards: parityShards,
 		Password:     pwd,
+		KeyFile:      keyFile,
 		NoEncrypt:    noEncrypt,
 		NoManifest:   noManifest,
 		Verbose:      verbose && !quiet,
@@ -158,6 +170,7 @@ func runSplitDir(inputDir, pwd string, prog progress.Reporter) error {
 		DataShards:   dataShards,
 		ParityShards: parityShards,
 		Password:     pwd,
+		KeyFile:      keyFile,
 		NoEncrypt:    noEncrypt,
 		Verbose:      verbose && !quiet,
 		Workers:      workers,
@@ -177,6 +190,7 @@ func runSplitDryRun(input string) error {
 		OutputDir:    outputDir,
 		DataShards:   dataShards,
 		ParityShards: parityShards,
+		KeyFile:      keyFile,
 		NoEncrypt:    noEncrypt,
 	})
 	if err != nil {
@@ -192,6 +206,7 @@ func runSplitDirDryRun(inputDir string) error {
 		OutputDir:    outputDir,
 		DataShards:   dataShards,
 		ParityShards: parityShards,
+		KeyFile:      keyFile,
 		NoEncrypt:    noEncrypt,
 	})
 	if err != nil {

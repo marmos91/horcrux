@@ -32,6 +32,7 @@ reconstructed output against the original file hash.`,
 var (
 	mergeOutput   string
 	mergePassword string
+	mergeKeyFile  string
 	mergeWorkers  int
 	mergeFailFast bool
 	mergeManifest string
@@ -41,6 +42,7 @@ var (
 func init() {
 	mergeCmd.Flags().StringVarP(&mergeOutput, "output", "o", "", "Output file or directory (default: original filename from header)")
 	mergeCmd.Flags().StringVarP(&mergePassword, "password", "p", "", "Decryption password (omit for interactive prompt)")
+	mergeCmd.Flags().StringVar(&mergeKeyFile, "key-file", "", "Key file for decryption")
 	mergeCmd.Flags().IntVarP(&mergeWorkers, "workers", "w", runtime.NumCPU(), "Max parallel operations (batch mode)")
 	mergeCmd.Flags().BoolVar(&mergeFailFast, "fail-fast", false, "Stop on first error (batch mode)")
 	mergeCmd.Flags().StringVar(&mergeManifest, "manifest", "", "Manifest file for shard validation and output verification")
@@ -106,6 +108,7 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		ShardDir:   shardDir,
 		OutputFile: mergeOutput,
 		Password:   mergePassword,
+		KeyFile:    mergeKeyFile,
 		Verbose:    verbose && !quiet,
 		Progress:   prog,
 		PromptPassword: func() (string, error) {
@@ -186,6 +189,7 @@ func mergeFromShardDir(shardDir string) error {
 		ShardDir:   shardDir,
 		OutputFile: mergeOutput,
 		Password:   mergePassword,
+		KeyFile:    mergeKeyFile,
 		Verbose:    verbose && !quiet,
 		Progress:   prog,
 		PromptPassword: func() (string, error) {
@@ -223,6 +227,7 @@ func runMergeDir(inputDir string, prog progress.Reporter) error {
 		InputDir:  inputDir,
 		OutputDir: mergeOutput,
 		Password:  mergePassword,
+		KeyFile:   mergeKeyFile,
 		Verbose:   verbose && !quiet,
 		Workers:   mergeWorkers,
 		FailFast:  mergeFailFast,

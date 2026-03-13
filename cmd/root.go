@@ -117,6 +117,7 @@ func applyConfigToFlags(cmd *cobra.Command, cfg *config.Config) error {
 		{"data-shards", ptrItoa(cfg.DataShards)},
 		{"parity-shards", ptrItoa(cfg.ParityShards)},
 		{"output", cfg.Output},
+		{"key-file", cfg.KeyFile},
 		{"no-encrypt", ptrFormatBool(cfg.NoEncrypt)},
 		{"workers", ptrItoa(cfg.Workers)},
 		{"fail-fast", ptrFormatBool(cfg.FailFast)},

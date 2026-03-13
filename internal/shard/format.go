@@ -63,15 +63,54 @@ type Header struct {
 	ChecksumValid bool // set by ReadHeader
 }
 
+const (
+	flagEncrypted    = 0x01
+	flagKeyFileUsed  = 0x02
+	flagPasswordUsed = 0x04
+)
+
 func (h *Header) IsEncrypted() bool {
-	return h.EncryptionFlags&0x01 != 0
+	return h.EncryptionFlags&flagEncrypted != 0
 }
 
 func (h *Header) SetEncrypted(encrypted bool) {
 	if encrypted {
-		h.EncryptionFlags |= 0x01
+		h.EncryptionFlags |= flagEncrypted
 	} else {
-		h.EncryptionFlags &^= 0x01
+		h.EncryptionFlags &^= flagEncrypted
+	}
+}
+
+// UsesKeyFile returns true if a key file was used for encryption.
+func (h *Header) UsesKeyFile() bool {
+	return h.EncryptionFlags&flagKeyFileUsed != 0
+}
+
+// SetKeyFileUsed sets or clears the key-file-used flag.
+func (h *Header) SetKeyFileUsed(used bool) {
+	if used {
+		h.EncryptionFlags |= flagKeyFileUsed
+	} else {
+		h.EncryptionFlags &^= flagKeyFileUsed
+	}
+}
+
+// UsesPassword returns true if a password was used for encryption.
+// For backward compatibility, legacy shards with EncryptionFlags == 0x01
+// (only the encrypted bit set) are treated as password-used.
+func (h *Header) UsesPassword() bool {
+	if h.EncryptionFlags == flagEncrypted {
+		return true // legacy: encrypted bit only → password-based
+	}
+	return h.EncryptionFlags&flagPasswordUsed != 0
+}
+
+// SetPasswordUsed sets or clears the password-used flag.
+func (h *Header) SetPasswordUsed(used bool) {
+	if used {
+		h.EncryptionFlags |= flagPasswordUsed
+	} else {
+		h.EncryptionFlags &^= flagPasswordUsed
 	}
 }
 
