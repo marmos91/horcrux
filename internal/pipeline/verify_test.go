@@ -186,6 +186,37 @@ func TestVerify_WithManifest(t *testing.T) {
 	}
 }
 
+func TestVerify_CorruptHeader(t *testing.T) {
+	shardDir := splitTestFile(t, "header checksum mismatch test", 3, 2, false)
+
+	// Corrupt bytes in the header checksum area
+	path := filepath.Join(shardDir, "testfile.txt.001.hrcx")
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flip bytes in the header (inside the checksummed region, not the checksum itself)
+	if _, err := f.WriteAt([]byte{0xFF, 0xFF}, 0x08); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+
+	r, err := Verify(shardDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !r.Recoverable {
+		t.Error("expected recoverable with 1 corrupt header shard")
+	}
+
+	// Shard 1 should have HeaderValid=false
+	st := r.ShardStatuses[1]
+	if st.HeaderValid {
+		t.Error("expected HeaderValid=false for corrupted header shard")
+	}
+}
+
 func TestVerify_EmptyDir(t *testing.T) {
 	tmpDir := t.TempDir()
 

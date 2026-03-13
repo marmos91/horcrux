@@ -1614,7 +1614,9 @@ func TestE2E_Verify_BatchDir(t *testing.T) {
 
 func TestE2E_Verify_EmptyDir(t *testing.T) {
 	emptyDir := filepath.Join(t.TempDir(), "empty")
-	_ = os.MkdirAll(emptyDir, 0755)
+	if err := os.MkdirAll(emptyDir, 0755); err != nil {
+		t.Fatal(err)
+	}
 
 	out, err := runHrcx(t, "verify", emptyDir)
 	if err == nil {
@@ -1622,5 +1624,35 @@ func TestE2E_Verify_EmptyDir(t *testing.T) {
 	}
 	if !strings.Contains(out, "no valid") && !strings.Contains(out, "no shard") {
 		t.Errorf("expected error about no shards found, got: %s", out)
+	}
+}
+
+func TestE2E_Verify_QuietRecoverable(t *testing.T) {
+	shardDir := splitForVerify(t, 5, 3)
+
+	out, err := runHrcx(t, "verify", "-q", shardDir)
+	if err != nil {
+		t.Fatalf("verify -q failed: %v\n%s", err, out)
+	}
+	if out != "" {
+		t.Errorf("expected empty output in quiet mode, got: %s", out)
+	}
+}
+
+func TestE2E_Verify_QuietNotRecoverable(t *testing.T) {
+	shardDir := splitForVerify(t, 5, 3)
+
+	for _, idx := range []string{"001", "003", "005", "007"} {
+		if err := os.Remove(filepath.Join(shardDir, "small.txt."+idx+".hrcx")); err != nil {
+			t.Fatalf("failed to remove shard %s: %v", idx, err)
+		}
+	}
+
+	out, err := runHrcx(t, "verify", "-q", shardDir)
+	if err == nil {
+		t.Fatal("expected verify -q to fail (not recoverable)")
+	}
+	if out != "" {
+		t.Errorf("expected empty output in quiet mode, got: %s", out)
 	}
 }

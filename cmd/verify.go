@@ -41,6 +41,9 @@ func runVerify(cmd *cobra.Command, args []string) error {
 func runVerifySingle(dir string) error {
 	r, err := pipeline.Verify(dir)
 	if err != nil {
+		if quiet {
+			os.Exit(1)
+		}
 		return err
 	}
 
@@ -60,6 +63,9 @@ func runVerifySingle(dir string) error {
 func runVerifyBatch(dir string) error {
 	results, err := pipeline.VerifyBatch(dir)
 	if err != nil {
+		if quiet {
+			os.Exit(1)
+		}
 		return err
 	}
 

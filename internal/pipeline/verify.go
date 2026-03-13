@@ -1,7 +1,10 @@
 package pipeline
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,18 +88,24 @@ func Verify(dir string) (*VerifyResult, error) {
 		indexMap[idx] = &shards[i]
 	}
 
-	// Verify payload checksums (skip inconsistent shards; they count as corrupt)
+	// Verify payload checksums and compute file hashes in a single pass per shard.
+	// Skip inconsistent shards; they count as corrupt.
 	payloadValid := make(map[int]bool, len(indexMap))
+	fileHashes := make(map[int]string, len(indexMap))
 	var corruptIndices []int
 	for idx, s := range indexMap {
 		if _, isInconsistent := inconsistent[idx]; isInconsistent {
 			corruptIndices = append(corruptIndices, idx)
 			continue
 		}
-		if verifyShardPayload(s.Path) {
+		hash, ok := verifyShard(s.Path, s.Header.PayloadSize)
+		if ok {
 			payloadValid[idx] = true
 		} else {
 			corruptIndices = append(corruptIndices, idx)
+		}
+		if hash != "" {
+			fileHashes[idx] = hash
 		}
 	}
 	sort.Ints(corruptIndices)
@@ -132,7 +141,7 @@ func Verify(dir string) (*VerifyResult, error) {
 		_, isInconsistent := inconsistent[i]
 		st.ConsistencyOK = !isInconsistent
 		st.PayloadValid = !isInconsistent && payloadValid[i]
-		st.ManifestHashOK = checkManifestHash(m, i, s.Path)
+		st.ManifestHashOK = matchManifestHash(m, i, fileHashes[i])
 		statuses[i] = st
 	}
 
@@ -196,28 +205,49 @@ func referenceHeader(shards []shardInfo) *shard.Header {
 	return shards[0].Header
 }
 
-// verifyShardPayload opens a shard file and verifies its payload checksum.
-func verifyShardPayload(path string) bool {
-	reader, err := shard.OpenReader(path)
+// verifyShard reads a shard file in a single pass, verifying the payload checksum
+// and computing the whole-file SHA-256 for manifest comparison.
+func verifyShard(path string, payloadSize uint64) (fileHash string, payloadValid bool) {
+	f, err := os.Open(path)
 	if err != nil {
-		return false
+		return "", false
 	}
-	defer func() { _ = reader.Close() }()
-	return reader.VerifyPayload() == nil
+	defer func() { _ = f.Close() }()
+
+	wholeHash := sha256.New()
+	payloadHash := sha256.New()
+
+	// Read header (whole-file hash only)
+	if _, err := io.CopyN(wholeHash, f, int64(shard.HeaderSize)); err != nil {
+		return "", false
+	}
+
+	// Read payload into both hashers
+	if _, err := io.CopyN(io.MultiWriter(wholeHash, payloadHash), f, int64(payloadSize)); err != nil {
+		return "", false
+	}
+
+	// Read trailer (whole-file hash only), then compare payload checksum
+	var trailer [shard.TrailerSize]byte
+	if _, err := io.ReadFull(io.TeeReader(f, wholeHash), trailer[:]); err != nil {
+		return fmt.Sprintf("%x", wholeHash.Sum(nil)), false
+	}
+
+	// Read any remaining bytes to EOF for accurate whole-file hash
+	_, _ = io.Copy(wholeHash, f)
+
+	payloadValid = bytes.Equal(payloadHash.Sum(nil), trailer[:])
+	return fmt.Sprintf("%x", wholeHash.Sum(nil)), payloadValid
 }
 
-// checkManifestHash compares the SHA-256 of a shard file against the manifest entry.
-// Returns nil if no manifest is loaded, the shard is unlisted, or the file cannot be hashed.
-func checkManifestHash(m *manifest.Manifest, index int, path string) *bool {
-	if m == nil {
+// matchManifestHash compares a pre-computed file hash against the manifest entry.
+// Returns nil if no manifest is loaded, the shard is unlisted, or no hash is available.
+func matchManifestHash(m *manifest.Manifest, index int, fileHash string) *bool {
+	if m == nil || fileHash == "" {
 		return nil
 	}
 	entry := m.FindShardByIndex(index)
 	if entry == nil {
-		return nil
-	}
-	fileHash, _, err := HashFile(path)
-	if err != nil {
 		return nil
 	}
 	return boolPtr(fileHash == entry.SHA256)
