@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/marmos91/horcrux/internal/shard"
 )
 
 var binaryPath string
@@ -283,9 +285,13 @@ func TestE2E_MergeWithCorruptShard(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Flip a byte in the payload area (after 256-byte header)
-	_, _ = f.Seek(260, io.SeekStart)
-	_, _ = f.Write([]byte{0xFF, 0xFF, 0xFF})
+	// Flip bytes in the payload area (offset into payload after the fixed header)
+	if _, err := f.Seek(int64(shard.HeaderSize)+4, io.SeekStart); err != nil {
+		t.Fatalf("seeking into shard payload: %v", err)
+	}
+	if _, err := f.Write([]byte{0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatalf("writing corruption bytes: %v", err)
+	}
 	_ = f.Close()
 
 	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, shardDir); err != nil {
@@ -1215,8 +1221,12 @@ func TestE2E_MergeManifestDetectsCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _ = f.Seek(260, io.SeekStart)
-	_, _ = f.Write([]byte{0xFF, 0xFF, 0xFF})
+	if _, err := f.Seek(int64(shard.HeaderSize)+4, io.SeekStart); err != nil {
+		t.Fatalf("seeking into shard payload: %v", err)
+	}
+	if _, err := f.Write([]byte{0xFF, 0xFF, 0xFF}); err != nil {
+		t.Fatalf("writing corruption bytes: %v", err)
+	}
 	_ = f.Close()
 
 	out, err := runHrcx(t, "merge", "--manifest", manifestPath, "-p", "test123", "-o", output, shardDir)

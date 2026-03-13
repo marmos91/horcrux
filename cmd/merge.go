@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/marmos91/horcrux/internal/manifest"
 	"github.com/marmos91/horcrux/internal/pipeline"
@@ -100,7 +102,11 @@ func runMerge(cmd *cobra.Command, args []string) error {
 	if mf != nil {
 		outputPath := mergeOutput
 		if outputPath == "" {
+			// Falling back to manifest's filename — validate it's safe
 			outputPath = mf.Original.Filename
+			if filepath.IsAbs(outputPath) || strings.Contains(outputPath, "..") || strings.Contains(outputPath, "/") || strings.Contains(outputPath, "\\") {
+				return fmt.Errorf("unsafe filename in manifest: %q", outputPath)
+			}
 		}
 		if err := verifyOutputAgainstManifest(mf, outputPath); err != nil {
 			return err
@@ -157,21 +163,57 @@ func runMergeDir(inputDir string, prog progress.Reporter) error {
 func validateShardsAgainstManifest(m *manifest.Manifest, shardDir string) {
 	fmt.Println("Validating shards against manifest...")
 	for _, entry := range m.Shards {
-		shardPath := filepath.Join(shardDir, entry.Filename)
+		shardPath, err := safeShardPath(shardDir, entry.Filename)
+		if err != nil {
+			fmt.Printf("  %-9s  shard %d: %s (%v)\n", "[ERROR]", entry.Index, entry.Filename, err)
+			continue
+		}
+
 		hash, _, err := pipeline.HashFile(shardPath)
 
 		var label string
 		switch {
-		case err != nil:
+		case err != nil && os.IsNotExist(err):
 			label = "[MISSING]"
+		case err != nil:
+			label = "[ERROR]"
 		case hash != entry.SHA256:
 			label = "[CORRUPT]"
 		default:
 			label = "[OK]"
 		}
 
-		fmt.Printf("  %-9s  shard %d: %s\n", label, entry.Index, entry.Filename)
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Printf("  %-9s  shard %d: %s (%v)\n", label, entry.Index, entry.Filename, err)
+		} else {
+			fmt.Printf("  %-9s  shard %d: %s\n", label, entry.Index, entry.Filename)
+		}
 	}
+}
+
+// safeShardPath validates that a shard filename is a plain base name (no path
+// separators or traversal) and returns the joined path under shardDir.
+func safeShardPath(shardDir, filename string) (string, error) {
+	if filename == "" {
+		return "", fmt.Errorf("empty filename")
+	}
+	if filepath.IsAbs(filename) || strings.Contains(filename, "/") || strings.Contains(filename, "\\") || strings.Contains(filename, "..") {
+		return "", fmt.Errorf("unsafe filename %q", filename)
+	}
+	joined := filepath.Join(shardDir, filename)
+	// Double-check the result stays under shardDir
+	abs, err := filepath.Abs(joined)
+	if err != nil {
+		return "", err
+	}
+	base, err := filepath.Abs(shardDir)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasPrefix(abs, base+string(filepath.Separator)) {
+		return "", fmt.Errorf("resolved path escapes shard directory")
+	}
+	return joined, nil
 }
 
 // verifyOutputAgainstManifest checks the reconstructed file's SHA-256 against the manifest.

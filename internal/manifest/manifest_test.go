@@ -118,6 +118,14 @@ func TestValidate_MissingVersion(t *testing.T) {
 	}
 }
 
+func TestValidate_UnsupportedVersion(t *testing.T) {
+	m := sampleManifest()
+	m.Version = "99.0.0"
+	if err := m.Validate(); err == nil {
+		t.Fatal("expected error for unsupported version")
+	}
+}
+
 func TestValidate_MissingFilename(t *testing.T) {
 	m := sampleManifest()
 	m.Original.Filename = ""

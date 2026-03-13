@@ -95,10 +95,18 @@ func Load(path string) (*Manifest, error) {
 	return &m, nil
 }
 
+// SupportedVersions lists all manifest schema versions this build can handle.
+var SupportedVersions = map[string]bool{
+	SchemaVersion: true,
+}
+
 // Validate checks structural consistency of the manifest.
 func (m *Manifest) Validate() error {
 	if m.Version == "" {
 		return fmt.Errorf("missing version")
+	}
+	if !SupportedVersions[m.Version] {
+		return fmt.Errorf("unsupported manifest version %q (supported: %s)", m.Version, SchemaVersion)
 	}
 	if m.Original.Filename == "" {
 		return fmt.Errorf("missing original filename")
