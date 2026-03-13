@@ -52,6 +52,7 @@ type ShardFileInfo struct {
 	Path     string
 	Size     uint64
 	SHA256   string
+	Location string // Backend URI where shard was distributed (empty if local-only)
 }
 
 // BuildManifest constructs a Manifest from a SplitResult.
@@ -94,6 +95,7 @@ func (r *SplitResult) BuildManifest() *manifest.Manifest {
 			Filename: sf.Filename,
 			Size:     sf.Size,
 			SHA256:   sf.SHA256,
+			Location: sf.Location,
 		}
 	}
 

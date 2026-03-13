@@ -15,9 +15,10 @@ import (
 )
 
 var (
-	verbose bool
-	dryRun  bool
-	quiet   bool
+	verbose             bool
+	dryRun              bool
+	quiet               bool
+	loadedBackendConfig *config.BackendConfig
 )
 
 var rootCmd = &cobra.Command{
@@ -99,6 +100,8 @@ func loadConfig(cmd *cobra.Command, args []string) error {
 	if err := applyConfigToFlags(cmd, cfg); err != nil {
 		return fmt.Errorf("config file %s: %w", cfgPath, err)
 	}
+
+	loadedBackendConfig = cfg.Backends
 	return nil
 }
 

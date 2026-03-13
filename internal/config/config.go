@@ -13,13 +13,59 @@ import (
 // Config holds optional settings loaded from a YAML config file.
 // Pointer fields distinguish "not set" (nil) from "set to zero/false/empty".
 type Config struct {
-	DataShards   *int    `yaml:"data-shards,omitempty"`
-	ParityShards *int    `yaml:"parity-shards,omitempty"`
-	Output       *string `yaml:"output,omitempty"`
-	NoEncrypt    *bool   `yaml:"no-encrypt,omitempty"`
-	Workers      *int    `yaml:"workers,omitempty"`
-	FailFast     *bool   `yaml:"fail-fast,omitempty"`
-	NoManifest   *bool   `yaml:"no-manifest,omitempty"`
+	DataShards   *int           `yaml:"data-shards,omitempty"`
+	ParityShards *int           `yaml:"parity-shards,omitempty"`
+	Output       *string        `yaml:"output,omitempty"`
+	NoEncrypt    *bool          `yaml:"no-encrypt,omitempty"`
+	Workers      *int           `yaml:"workers,omitempty"`
+	FailFast     *bool          `yaml:"fail-fast,omitempty"`
+	NoManifest   *bool          `yaml:"no-manifest,omitempty"`
+	Backends     *BackendConfig `yaml:"backends,omitempty"`
+}
+
+// BackendConfig holds configuration for cloud storage backends.
+type BackendConfig struct {
+	S3      *S3Config      `yaml:"s3,omitempty"`
+	Azure   *AzureConfig   `yaml:"azure,omitempty"`
+	Dropbox *DropboxConfig `yaml:"dropbox,omitempty"`
+	GDrive  *GDriveConfig  `yaml:"gdrive,omitempty"`
+	FTP     *FTPConfig     `yaml:"ftp,omitempty"`
+}
+
+// S3Config configures the S3 backend.
+type S3Config struct {
+	Region          *string `yaml:"region,omitempty"`
+	AccessKeyID     *string `yaml:"access-key-id,omitempty"`
+	SecretAccessKey *string `yaml:"secret-access-key,omitempty"`
+	Endpoint        *string `yaml:"endpoint,omitempty"`
+	ForcePathStyle  *bool   `yaml:"force-path-style,omitempty"`
+}
+
+// AzureConfig configures the Azure Blob backend.
+type AzureConfig struct {
+	AccountName      *string `yaml:"account-name,omitempty"`
+	AccountKey       *string `yaml:"account-key,omitempty"`
+	ConnectionString *string `yaml:"connection-string,omitempty"`
+}
+
+// DropboxConfig configures the Dropbox backend.
+type DropboxConfig struct {
+	AccessToken *string `yaml:"access-token,omitempty"`
+}
+
+// GDriveConfig configures the Google Drive backend.
+type GDriveConfig struct {
+	ServiceAccountJSON *string `yaml:"service-account-json,omitempty"`
+	CredentialsFile    *string `yaml:"credentials-file,omitempty"`
+}
+
+// FTPConfig configures the FTP/FTPS backend.
+type FTPConfig struct {
+	Host     *string `yaml:"host,omitempty"`
+	Port     *int    `yaml:"port,omitempty"`
+	Username *string `yaml:"username,omitempty"`
+	Password *string `yaml:"password,omitempty"`
+	TLS      *bool   `yaml:"tls,omitempty"`
 }
 
 // searchPaths returns the ordered list of config file paths to check.
@@ -92,18 +138,31 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("workers must be >= 1, got %d", *c.Workers)
 	}
 
+	if c.Backends != nil {
+		if err := c.Backends.Validate(); err != nil {
+			return fmt.Errorf("backends: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// Validate checks that backend configuration values are reasonable.
+func (b *BackendConfig) Validate() error {
+	if b.FTP != nil && b.FTP.Port != nil && (*b.FTP.Port < 1 || *b.FTP.Port > 65535) {
+		return fmt.Errorf("ftp port must be between 1 and 65535, got %d", *b.FTP.Port)
+	}
 	return nil
 }
 
 // DefaultConfig returns a Config with all fields populated with defaults.
 func DefaultConfig() *Config {
-	workers := runtime.NumCPU()
 	return &Config{
 		DataShards:   ptr(5),
 		ParityShards: ptr(3),
 		Output:       ptr("."),
 		NoEncrypt:    ptr(false),
-		Workers:      &workers,
+		Workers:      ptr(runtime.NumCPU()),
 		FailFast:     ptr(false),
 		NoManifest:   ptr(false),
 	}

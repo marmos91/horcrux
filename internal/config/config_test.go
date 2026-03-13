@@ -120,7 +120,7 @@ func TestFindConfigFile(t *testing.T) {
 	}
 
 	// Create .hrcxrc in cwd
-	if err := os.WriteFile(filepath.Join(dir, ".hrcxrc"), []byte("data-shards: 5\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".hrcxrc"), []byte("data-shards: 5\n"), 0o644); err != nil {
 		t.Fatalf("cannot write .hrcxrc: %v", err)
 	}
 
@@ -149,6 +149,79 @@ func TestDefaultConfigMarshalRoundtrip(t *testing.T) {
 	assertBoolPtr(t, "NoEncrypt", loaded.NoEncrypt, *cfg.NoEncrypt)
 	assertIntPtr(t, "Workers", loaded.Workers, *cfg.Workers)
 	assertBoolPtr(t, "FailFast", loaded.FailFast, *cfg.FailFast)
+}
+
+func TestLoadBackendConfig(t *testing.T) {
+	content := `
+data-shards: 5
+backends:
+  s3:
+    region: us-east-1
+  azure:
+    account-name: myaccount
+  dropbox:
+    access-token: my-token
+  ftp:
+    host: ftp.example.com
+    port: 2121
+    tls: true
+`
+	path := writeTempConfig(t, content)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Backends == nil {
+		t.Fatal("Backends should not be nil")
+	}
+	if cfg.Backends.S3 == nil || *cfg.Backends.S3.Region != "us-east-1" {
+		t.Errorf("S3.Region: expected us-east-1, got %v", cfg.Backends.S3)
+	}
+	if cfg.Backends.Azure == nil || *cfg.Backends.Azure.AccountName != "myaccount" {
+		t.Errorf("Azure.AccountName: expected myaccount, got %v", cfg.Backends.Azure)
+	}
+	if cfg.Backends.Dropbox == nil || *cfg.Backends.Dropbox.AccessToken != "my-token" {
+		t.Errorf("Dropbox.AccessToken: expected my-token, got %v", cfg.Backends.Dropbox)
+	}
+	if cfg.Backends.FTP == nil {
+		t.Fatal("FTP should not be nil")
+	}
+	if *cfg.Backends.FTP.Host != "ftp.example.com" {
+		t.Errorf("FTP.Host: expected ftp.example.com, got %q", *cfg.Backends.FTP.Host)
+	}
+	if *cfg.Backends.FTP.Port != 2121 {
+		t.Errorf("FTP.Port: expected 2121, got %d", *cfg.Backends.FTP.Port)
+	}
+	if !*cfg.Backends.FTP.TLS {
+		t.Error("FTP.TLS: expected true")
+	}
+}
+
+func TestBackendConfigValidation(t *testing.T) {
+	intPtr := func(v int) *int { return &v }
+
+	tests := []struct {
+		name    string
+		cfg     *BackendConfig
+		wantErr bool
+	}{
+		{"nil config", nil, false},
+		{"empty config", &BackendConfig{}, false},
+		{"valid FTP port", &BackendConfig{FTP: &FTPConfig{Port: intPtr(21)}}, false},
+		{"FTP port too low", &BackendConfig{FTP: &FTPConfig{Port: intPtr(0)}}, true},
+		{"FTP port too high", &BackendConfig{FTP: &FTPConfig{Port: intPtr(70000)}}, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Backends: tt.cfg}
+			err := cfg.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr = %v", err, tt.wantErr)
+			}
+		})
+	}
 }
 
 func TestLoadUnknownKeys(t *testing.T) {
@@ -186,7 +259,7 @@ func writeTempConfig(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("cannot write temp config: %v", err)
 	}
 	return path
