@@ -145,7 +145,7 @@ func runCollectWithManifest() error {
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
-	if err := pipeline.CollectFromManifest(context.Background(), mf, tempDir); err != nil {
+	if err := pipeline.CollectFromManifest(context.Background(), mf, tempDir, loadedBackendConfig); err != nil {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
 

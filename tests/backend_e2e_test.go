@@ -97,7 +97,7 @@ func TestBackendE2E_SplitDistributeCollectMerge(t *testing.T) {
 		t.Fatalf("Load manifest: %v", err)
 	}
 
-	if err := pipeline.CollectFromManifest(context.Background(), mf, collectDir); err != nil {
+	if err := pipeline.CollectFromManifest(context.Background(), mf, collectDir, nil); err != nil {
 		t.Fatalf("CollectFromManifest: %v", err)
 	}
 

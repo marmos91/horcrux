@@ -18,7 +18,7 @@ import (
 // fields into tempDir. Only shards with a non-empty Location are downloaded.
 // Each downloaded shard is verified against its expected SHA-256 hash.
 // Returns an error if no shards have a Location field.
-func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir string) error {
+func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir string, cfg *config.BackendConfig) error {
 	// Check that at least one shard has a location
 	hasLocation := false
 	for _, entry := range m.Shards {
@@ -46,7 +46,7 @@ func CollectFromManifest(ctx context.Context, m *manifest.Manifest, tempDir stri
 		expectedSHA := entry.SHA256
 
 		g.Go(func() error {
-			b, remoteKey, err := openBackendForLocationCached(entry.Location, &mu, backendCache)
+			b, remoteKey, err := openBackendForLocationCached(entry.Location, cfg, &mu, backendCache)
 			if err != nil {
 				return fmt.Errorf("shard %d: %w", entry.Index, err)
 			}
@@ -126,7 +126,7 @@ func CollectFromBackends(ctx context.Context, uris []string, tempDir string, cfg
 
 // openBackendForLocationCached is like openBackendForLocation but caches
 // backend instances by base URI to avoid recreating clients per shard.
-func openBackendForLocationCached(location string, mu *sync.Mutex, cache map[string]backend.Backend) (backend.Backend, string, error) {
+func openBackendForLocationCached(location string, cfg *config.BackendConfig, mu *sync.Mutex, cache map[string]backend.Backend) (backend.Backend, string, error) {
 	baseURI, remoteKey, err := parseLocationURI(location)
 	if err != nil {
 		return nil, "", err
@@ -137,7 +137,7 @@ func openBackendForLocationCached(location string, mu *sync.Mutex, cache map[str
 	mu.Unlock()
 
 	if !ok {
-		b, err = backend.Open(baseURI, nil)
+		b, err = backend.NewFromConfig(baseURI, cfg)
 		if err != nil {
 			return nil, "", err
 		}
@@ -171,14 +171,18 @@ func parseLocationURI(location string) (baseURI, remoteKey string, err error) {
 
 	// Reconstruct the base URI without the filename.
 	// For bucket-based schemes: scheme://bucket[/prefix]
-	// For path-based schemes:   scheme:///prefix
+	// For path-based schemes:   scheme:///path (prefix already has leading slash)
 	baseURI = scheme + "://"
-	if bucket != "" {
+	switch {
+	case bucket != "":
 		baseURI += bucket
 		if prefix != "" {
 			baseURI += "/" + prefix
 		}
-	} else {
+	case strings.HasPrefix(prefix, "/"):
+		// Path-based scheme (e.g. file:///tmp/shards): prefix already starts with /
+		baseURI += prefix
+	default:
 		baseURI += "/" + prefix
 	}
 

@@ -117,16 +117,14 @@ func NewFromConfig(uri string, cfg *config.BackendConfig) (Backend, error) {
 }
 
 // configOptsForScheme extracts backend-specific options from config,
-// with environment variable overrides.
+// with environment variable overrides. Environment variables are always
+// applied, even when cfg is nil, so env-only configuration works.
 func configOptsForScheme(scheme string, cfg *config.BackendConfig) map[string]string {
 	opts := make(map[string]string)
-	if cfg == nil {
-		return opts
-	}
 
 	switch scheme {
 	case "s3":
-		if cfg.S3 != nil {
+		if cfg != nil && cfg.S3 != nil {
 			setIfNotNil(opts, "region", cfg.S3.Region)
 			setIfNotNil(opts, "access-key-id", cfg.S3.AccessKeyID)
 			setIfNotNil(opts, "secret-access-key", cfg.S3.SecretAccessKey)
@@ -141,7 +139,7 @@ func configOptsForScheme(scheme string, cfg *config.BackendConfig) map[string]st
 		envOverride(opts, "endpoint", "AWS_ENDPOINT_URL")
 
 	case "azure":
-		if cfg.Azure != nil {
+		if cfg != nil && cfg.Azure != nil {
 			setIfNotNil(opts, "account-name", cfg.Azure.AccountName)
 			setIfNotNil(opts, "account-key", cfg.Azure.AccountKey)
 			setIfNotNil(opts, "connection-string", cfg.Azure.ConnectionString)
@@ -151,20 +149,20 @@ func configOptsForScheme(scheme string, cfg *config.BackendConfig) map[string]st
 		envOverride(opts, "connection-string", "AZURE_STORAGE_CONNECTION_STRING")
 
 	case "dropbox":
-		if cfg.Dropbox != nil {
+		if cfg != nil && cfg.Dropbox != nil {
 			setIfNotNil(opts, "access-token", cfg.Dropbox.AccessToken)
 		}
 		envOverride(opts, "access-token", "DROPBOX_ACCESS_TOKEN")
 
 	case "gdrive":
-		if cfg.GDrive != nil {
+		if cfg != nil && cfg.GDrive != nil {
 			setIfNotNil(opts, "service-account-json", cfg.GDrive.ServiceAccountJSON)
 			setIfNotNil(opts, "credentials-file", cfg.GDrive.CredentialsFile)
 		}
 		envOverride(opts, "credentials-file", "GOOGLE_APPLICATION_CREDENTIALS")
 
 	case "ftp":
-		if cfg.FTP != nil {
+		if cfg != nil && cfg.FTP != nil {
 			setIfNotNil(opts, "host", cfg.FTP.Host)
 			setIfNotNil(opts, "username", cfg.FTP.Username)
 			setIfNotNil(opts, "password", cfg.FTP.Password)

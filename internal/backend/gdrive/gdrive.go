@@ -112,9 +112,9 @@ func (g *GDrive) Download(ctx context.Context, remoteKey string, localPath strin
 }
 
 func (g *GDrive) List(ctx context.Context, prefix string) ([]backend.RemoteFile, error) {
-	query := fmt.Sprintf("'%s' in parents and trashed = false", g.folderID)
+	query := fmt.Sprintf("'%s' in parents and trashed = false", escapeQuery(g.folderID))
 	if prefix != "" {
-		query += fmt.Sprintf(" and name contains '%s'", prefix)
+		query += fmt.Sprintf(" and name contains '%s'", escapeQuery(prefix))
 	}
 
 	var files []backend.RemoteFile
@@ -169,8 +169,13 @@ func (g *GDrive) Delete(ctx context.Context, remoteKey string) error {
 	return nil
 }
 
+// escapeQuery escapes single quotes in Google Drive query values.
+func escapeQuery(s string) string {
+	return strings.ReplaceAll(s, "'", "\\'")
+}
+
 func (g *GDrive) findFile(ctx context.Context, name string) (string, error) {
-	query := fmt.Sprintf("'%s' in parents and name = '%s' and trashed = false", g.folderID, name)
+	query := fmt.Sprintf("'%s' in parents and name = '%s' and trashed = false", escapeQuery(g.folderID), escapeQuery(name))
 	result, err := g.service.Files.List().Q(query).Fields("files(id)").Context(ctx).Do()
 	if err != nil {
 		return "", fmt.Errorf("searching Google Drive: %w", err)
