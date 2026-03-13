@@ -1,0 +1,83 @@
+package pipeline
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/marmos91/horcrux/internal/backend"
+	"golang.org/x/sync/errgroup"
+)
+
+// DistributeShards uploads shard files to backends using round-robin assignment.
+// Each shard's Location field is updated with the backend URI.
+func DistributeShards(ctx context.Context, shardFiles []ShardFileInfo, backends []BackendWithURI) ([]ShardFileInfo, error) {
+	if len(backends) == 0 {
+		return shardFiles, nil
+	}
+
+	result := make([]ShardFileInfo, len(shardFiles))
+	copy(result, shardFiles)
+
+	g, ctx := errgroup.WithContext(ctx)
+
+	for i := range result {
+		bk := backends[i%len(backends)]
+		remoteKey := result[i].Filename
+
+		g.Go(func() error {
+			if err := bk.Backend.Upload(ctx, result[i].Path, remoteKey); err != nil {
+				return fmt.Errorf("uploading shard %d to %s: %w", result[i].Index, bk.URI, err)
+			}
+			result[i].Location = bk.URI + "/" + remoteKey
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+// CleanupLocalShards removes local shard files after successful distribution.
+func CleanupLocalShards(shardFiles []ShardFileInfo) error {
+	for _, sf := range shardFiles {
+		if err := os.Remove(sf.Path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("removing local shard %s: %w", sf.Path, err)
+		}
+	}
+	return nil
+}
+
+// BackendWithURI pairs a backend instance with its original URI for location tracking.
+type BackendWithURI struct {
+	Backend backend.Backend
+	URI     string
+}
+
+// OpenBackends parses URIs and opens backend instances.
+func OpenBackends(uris []string) ([]BackendWithURI, error) {
+	backends := make([]BackendWithURI, 0, len(uris))
+	for _, uri := range uris {
+		b, err := backend.Open(uri, nil)
+		if err != nil {
+			return nil, fmt.Errorf("opening backend %s: %w", uri, err)
+		}
+		cleaned := strings.TrimRight(uri, "/")
+		backends = append(backends, BackendWithURI{Backend: b, URI: cleaned})
+	}
+	return backends, nil
+}
+
+// ResolveShardDir returns the shard directory from distribute results,
+// falling back to the given default.
+func ResolveShardDir(shardFiles []ShardFileInfo, fallback string) string {
+	if len(shardFiles) > 0 && shardFiles[0].Path != "" {
+		return filepath.Dir(shardFiles[0].Path)
+	}
+	return fallback
+}
