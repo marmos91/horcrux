@@ -109,6 +109,7 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		ParityShards: parityShards,
 		Password:     pwd,
 		NoEncrypt:    noEncrypt,
+		NoManifest:   noManifest,
 		Verbose:      verbose && !quiet,
 		Progress:     prog,
 	})

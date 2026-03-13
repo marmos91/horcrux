@@ -212,7 +212,8 @@ func safeShardPath(shardDir, filename string) (string, error) {
 		return "", err
 	}
 	joined := filepath.Join(shardDir, filename)
-	// Double-check the result stays under shardDir
+	// Double-check the result stays under shardDir using filepath.Rel,
+	// which correctly handles edge cases like root directories.
 	abs, err := filepath.Abs(joined)
 	if err != nil {
 		return "", err
@@ -221,7 +222,11 @@ func safeShardPath(shardDir, filename string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !strings.HasPrefix(abs, base+string(filepath.Separator)) {
+	rel, err := filepath.Rel(base, abs)
+	if err != nil {
+		return "", fmt.Errorf("resolved path escapes shard directory")
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("resolved path escapes shard directory")
 	}
 	return joined, nil

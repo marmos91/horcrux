@@ -87,6 +87,7 @@ func SplitDir(opts SplitDirOptions) ([]FileResult, error) {
 				ParityShards: opts.ParityShards,
 				Password:     opts.Password,
 				NoEncrypt:    opts.NoEncrypt,
+				NoManifest:   opts.NoManifest,
 				Verbose:      opts.Verbose,
 				Progress:     opts.Progress,
 			})

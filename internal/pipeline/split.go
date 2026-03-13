@@ -25,6 +25,7 @@ type SplitOptions struct {
 	ParityShards int
 	Password     string
 	NoEncrypt    bool
+	NoManifest   bool
 	Verbose      bool
 	Progress     progress.Reporter
 }
@@ -286,30 +287,35 @@ func Split(opts SplitOptions) (result *SplitResult, err error) {
 		writers[i] = nil
 	}
 
-	// Build shard file info by hashing each completed shard file
-	shardFiles := make([]ShardFileInfo, totalShards)
-	for i := range totalShards {
-		shardName := shardFilename(originalName, i)
-		shardPath := filepath.Join(opts.OutputDir, shardName)
+	// Build shard file info by hashing each completed shard file.
+	// Skip when --no-manifest to avoid re-reading all shard data from disk.
+	var shardFiles []ShardFileInfo
+	if !opts.NoManifest {
+		shardFiles = make([]ShardFileInfo, totalShards)
+		for i := range totalShards {
+			shardName := shardFilename(originalName, i)
+			shardPath := filepath.Join(opts.OutputDir, shardName)
 
-		fileHash, fileSize, err := HashFile(shardPath)
-		if err != nil {
-			return nil, fmt.Errorf("hashing shard %d: %w", i, err)
-		}
+			fileHash, fileSize, err := HashFile(shardPath)
+			if err != nil {
+				return nil, fmt.Errorf("hashing shard %d: %w", i, err)
+			}
 
-		shardFiles[i] = ShardFileInfo{
-			Index:    i,
-			Type:     shardType(i, opts.DataShards),
-			Filename: shardName,
-			Path:     shardPath,
-			Size:     fileSize,
-			SHA256:   fileHash,
+			shardFiles[i] = ShardFileInfo{
+				Index:    i,
+				Type:     shardType(i, opts.DataShards),
+				Filename: shardName,
+				Path:     shardPath,
+				Size:     fileSize,
+				SHA256:   fileHash,
+			}
 		}
 	}
 
 	if showVerbose {
-		for _, sf := range shardFiles {
-			fmt.Printf("  Created: %s\n", sf.Path)
+		for i := range totalShards {
+			shardPath := filepath.Join(opts.OutputDir, shardFilename(originalName, i))
+			fmt.Printf("  Created: %s\n", shardPath)
 		}
 		fmt.Println("Split complete.")
 	}
