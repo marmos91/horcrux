@@ -25,17 +25,19 @@ placed in a subdirectory named after the file.`,
 }
 
 var (
-	dataShards    int
-	parityShards  int
-	outputDir     string
-	password      string
-	keyFile       string
-	noEncrypt     bool
-	workers       int
-	failFast      bool
-	noManifest    bool
-	distributeRaw []string
-	keepLocal     bool
+	dataShards         int
+	parityShards       int
+	outputDir          string
+	password           string
+	keyFile            string
+	noEncrypt          bool
+	workers            int
+	failFast           bool
+	noManifest         bool
+	distributeRaw      []string
+	keepLocal          bool
+	distributeManifest bool
+	interactive        bool
 )
 
 func init() {
@@ -48,8 +50,10 @@ func init() {
 	splitCmd.Flags().IntVarP(&workers, "workers", "w", runtime.NumCPU(), "Max parallel operations (directory mode)")
 	splitCmd.Flags().BoolVar(&failFast, "fail-fast", false, "Stop on first error (directory mode)")
 	splitCmd.Flags().BoolVar(&noManifest, "no-manifest", false, "Don't generate a manifest file")
-	splitCmd.Flags().StringSliceVar(&distributeRaw, "distribute", nil, "Backend URIs for shard distribution (comma-separated)")
+	splitCmd.Flags().StringSliceVar(&distributeRaw, "distribute", nil, "Backend URIs for shard distribution (comma-separated, with optional *N weights)")
 	splitCmd.Flags().BoolVar(&keepLocal, "keep-local", true, "Keep local copies after distribution")
+	splitCmd.Flags().BoolVar(&distributeManifest, "distribute-manifest", false, "Upload manifest to all distribution backends")
+	splitCmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Interactive wizard for guided split configuration")
 
 	rootCmd.AddCommand(splitCmd)
 }
@@ -83,6 +87,13 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--key-file cannot be used with --no-encrypt")
 	}
 
+	if interactive {
+		if info.IsDir() {
+			return fmt.Errorf("--interactive is not supported with directory input")
+		}
+		return runSplitInteractive(cmd, input, info)
+	}
+
 	if dryRun {
 		if info.IsDir() {
 			return runSplitDirDryRun(input)
@@ -90,16 +101,13 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return runSplitDryRun(input)
 	}
 
-	// Resolve password once before any work.
-	// Key file only: no password needed. Password provided via -p: use it directly.
-	// Otherwise: prompt interactively.
 	var pwd string
 	if !noEncrypt {
 		switch {
 		case password != "":
 			pwd = password
 		case keyFile != "":
-			// Key-file-only mode: no password needed
+			// key-file-only: no password needed
 		default:
 			pwd, err = promptPassword("Enter encryption password: ")
 			if err != nil {
@@ -138,9 +146,9 @@ func runSplit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Distribute shards to backends if requested
+	var backends []pipeline.BackendWithURI
 	if len(distributeRaw) > 0 && result.ShardFiles != nil {
-		backends, err := pipeline.OpenBackends(distributeRaw, loadedBackendConfig)
+		backends, err = pipeline.OpenWeightedBackends(distributeRaw, loadedBackendConfig)
 		if err != nil {
 			return err
 		}
@@ -160,7 +168,19 @@ func runSplit(cmd *cobra.Command, args []string) error {
 	if noManifest {
 		return nil
 	}
-	return pipeline.SaveManifest(result, outputDir)
+
+	manifestPath, err := pipeline.SaveManifestPath(result, outputDir)
+	if err != nil {
+		return err
+	}
+
+	if distributeManifest && len(backends) > 0 {
+		if err := pipeline.DistributeManifest(cmd.Context(), manifestPath, backends); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func runSplitDir(inputDir, pwd string, prog progress.Reporter) error {
@@ -218,8 +238,9 @@ func runSplitDirDryRun(inputDir string) error {
 
 func promptPassword(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
-	if term.IsTerminal(int(os.Stdin.Fd())) {
-		pw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		pw, err := term.ReadPassword(fd)
 		fmt.Fprintln(os.Stderr)
 		return string(pw), err
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -53,17 +54,25 @@ func Get(scheme string) (Constructor, error) {
 }
 
 // ParseURI splits a backend URI into scheme, bucket, and path.
+// Query parameters (e.g. "?format=svg") are stripped from the path.
 //
 //	"s3://my-bucket/prefix/key" → ("s3", "my-bucket", "prefix/key")
 //	"file:///tmp/shards"        → ("file", "", "/tmp/shards")
 //	"dropbox:///folder/sub"     → ("dropbox", "", "/folder/sub")
+//	"qr:///tmp/qr?format=svg"  → ("qr",  "", "/tmp/qr")
 func ParseURI(raw string) (scheme, bucket, path string, err error) {
-	idx := strings.Index(raw, "://")
+	// Strip query string before parsing
+	rawNoQuery := raw
+	if qIdx := strings.Index(raw, "?"); qIdx > 0 {
+		rawNoQuery = raw[:qIdx]
+	}
+
+	idx := strings.Index(rawNoQuery, "://")
 	if idx < 1 {
 		return "", "", "", fmt.Errorf("invalid backend URI %q: missing scheme", raw)
 	}
-	scheme = raw[:idx]
-	rest := raw[idx+3:]
+	scheme = rawNoQuery[:idx]
+	rest := rawNoQuery[idx+3:]
 
 	// For schemes with authority (bucket/container): scheme://bucket/path
 	// For schemes without authority: scheme:///path (rest starts with "/")
@@ -82,9 +91,22 @@ func ParseURI(raw string) (scheme, bucket, path string, err error) {
 	return scheme, bucket, path, nil
 }
 
+// ParseQueryParams extracts query parameters from a URI string.
+// Returns nil if no query string is present.
+func ParseQueryParams(raw string) url.Values {
+	if qIdx := strings.Index(raw, "?"); qIdx > 0 {
+		vals, err := url.ParseQuery(raw[qIdx+1:])
+		if err != nil {
+			return nil
+		}
+		return vals
+	}
+	return nil
+}
+
 // Open parses a URI, looks up the registered constructor, and creates a Backend.
 // Extra options (e.g. from config) can be passed; the URI's bucket and path are
-// injected as "bucket" and "prefix".
+// injected as "bucket" and "prefix". Query parameters in the URI are merged as options.
 func Open(uri string, extraOpts map[string]string) (Backend, error) {
 	scheme, bucket, path, err := ParseURI(uri)
 	if err != nil {
@@ -97,6 +119,14 @@ func Open(uri string, extraOpts map[string]string) (Backend, error) {
 	}
 
 	opts := make(map[string]string)
+	// Query params have lowest priority
+	if qp := ParseQueryParams(uri); qp != nil {
+		for k, v := range qp {
+			if len(v) > 0 {
+				opts[k] = v[0]
+			}
+		}
+	}
 	maps.Copy(opts, extraOpts)
 	opts["bucket"] = bucket
 	opts["prefix"] = path
@@ -175,6 +205,9 @@ func configOptsForScheme(scheme string, cfg *config.BackendConfig) map[string]st
 		}
 		envOverride(opts, "username", "FTP_USERNAME")
 		envOverride(opts, "password", "FTP_PASSWORD")
+
+	case "qr":
+		// QR backend uses query params (format) — no config file or env vars needed.
 	}
 
 	return opts

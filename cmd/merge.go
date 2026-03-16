@@ -52,28 +52,23 @@ func init() {
 }
 
 func runMerge(cmd *cobra.Command, args []string) error {
-	// --collect is incompatible with --dry-run (it downloads real files)
 	if len(collectRaw) > 0 && dryRun {
 		return fmt.Errorf("--dry-run is not supported with --collect (collection downloads real files)")
 	}
 
-	// If --collect with --manifest, use manifest-guided collection
 	if len(collectRaw) > 0 && mergeManifest != "" {
 		return runCollectWithManifest(cmd.Context())
 	}
 
-	// If --collect without manifest, use backend listing
 	if len(collectRaw) > 0 {
 		return runCollectFromBackends(cmd.Context())
 	}
 
-	// Determine shard directory
 	var shardDir string
 	switch {
 	case len(args) == 1:
 		shardDir = args[0]
 	case mergeManifest != "":
-		// Derive shard dir from manifest's directory
 		shardDir = filepath.Dir(mergeManifest)
 	default:
 		return fmt.Errorf("requires a shard directory argument (or use --manifest or --collect)")
@@ -93,7 +88,6 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		return runMergeDir(shardDir, prog)
 	}
 
-	// If --manifest is provided, validate shards before merging
 	var mf *manifest.Manifest
 	if mergeManifest != "" {
 		var err error
@@ -120,15 +114,12 @@ func runMerge(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// If manifest was provided, verify the output file hash
 	if mf != nil {
 		outputPath, err := resolveOutputPath(mf)
 		if err != nil {
 			return err
 		}
-		if err := verifyOutputAgainstManifest(mf, outputPath); err != nil {
-			return err
-		}
+		return verifyOutputAgainstManifest(mf, outputPath)
 	}
 
 	return nil
@@ -152,19 +143,12 @@ func runCollectWithManifest(ctx context.Context) error {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
 
-	if err := mergeFromShardDir(tempDir); err != nil {
-		return err
-	}
-
-	outputPath, err := resolveOutputPath(mf)
-	if err != nil {
-		return err
-	}
-	return verifyOutputAgainstManifest(mf, outputPath)
+	return mergeAndVerifyManifest(tempDir, mf)
 }
 
 // runCollectFromBackends lists .hrcx files on each backend, downloads them,
-// then merges from the temp directory.
+// then merges from the temp directory. If a manifest is discovered on any
+// backend, it is used for guided collection with output verification.
 func runCollectFromBackends(ctx context.Context) error {
 	tempDir, err := os.MkdirTemp("", "hrcx-collect-*")
 	if err != nil {
@@ -172,15 +156,35 @@ func runCollectFromBackends(ctx context.Context) error {
 	}
 	defer func() { _ = os.RemoveAll(tempDir) }()
 
+	mf, _ := pipeline.DiscoverManifestOnBackends(ctx, collectRaw, tempDir, loadedBackendConfig)
+
+	if mf != nil {
+		fmt.Printf("Discovered manifest for %s on backends\n", mf.Original.Filename)
+		if err := pipeline.CollectFromManifest(ctx, mf, tempDir, loadedBackendConfig); err != nil {
+			return fmt.Errorf("collecting shards: %w", err)
+		}
+		return mergeAndVerifyManifest(tempDir, mf)
+	}
+
 	if err := pipeline.CollectFromBackends(ctx, collectRaw, tempDir, loadedBackendConfig); err != nil {
 		return fmt.Errorf("collecting shards: %w", err)
 	}
-
 	return mergeFromShardDir(tempDir)
 }
 
-// mergeFromShardDir runs a merge operation on the given shard directory
-// using the current command-line options.
+// mergeAndVerifyManifest merges shards from the given directory and verifies
+// the output against the manifest's SHA-256 hash.
+func mergeAndVerifyManifest(shardDir string, mf *manifest.Manifest) error {
+	if err := mergeFromShardDir(shardDir); err != nil {
+		return err
+	}
+	outputPath, err := resolveOutputPath(mf)
+	if err != nil {
+		return err
+	}
+	return verifyOutputAgainstManifest(mf, outputPath)
+}
+
 func mergeFromShardDir(shardDir string) error {
 	prog, cleanup := newProgressReporter()
 	defer cleanup()
@@ -255,22 +259,20 @@ func validateShardsAgainstManifest(m *manifest.Manifest, shardDir string) {
 		hash, _, err := pipeline.HashFile(shardPath)
 
 		var label string
+		var detail string
 		switch {
 		case err != nil && os.IsNotExist(err):
 			label = "[MISSING]"
 		case err != nil:
 			label = "[ERROR]"
+			detail = fmt.Sprintf(" (%v)", err)
 		case hash != entry.SHA256:
 			label = "[CORRUPT]"
 		default:
 			label = "[OK]"
 		}
 
-		if err != nil && !os.IsNotExist(err) {
-			fmt.Printf("  %-9s  shard %d: %s (%v)\n", label, entry.Index, entry.Filename, err)
-		} else {
-			fmt.Printf("  %-9s  shard %d: %s\n", label, entry.Index, entry.Filename)
-		}
+		fmt.Printf("  %-9s  shard %d: %s%s\n", label, entry.Index, entry.Filename, detail)
 	}
 }
 
