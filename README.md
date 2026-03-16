@@ -47,6 +47,24 @@ make build
 
 The binary is named `hrcx`.
 
+### Nix
+
+```bash
+# Build
+nix build github:marmos91/horcrux
+
+# Run without installing
+nix run github:marmos91/horcrux -- --help
+
+# Install into your profile
+nix profile install github:marmos91/horcrux
+
+# Enter a development shell with Go, gopls, golangci-lint, and goreleaser
+nix develop github:marmos91/horcrux
+```
+
+If you've cloned the repo locally, replace `github:marmos91/horcrux` with `.` to use the local flake.
+
 ## Usage
 
 ### Split a file
