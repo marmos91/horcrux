@@ -1345,29 +1345,21 @@ func TestE2E_SplitDryRunNoManifest(t *testing.T) {
 	}
 }
 
-// --- QR Code Export/Import E2E tests ---
+// --- QR Code Backend E2E tests ---
 
-func TestE2E_ExportImportQR_RoundTrip(t *testing.T) {
+func TestE2E_QRBackend_Distribute(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := testdataPath("small.txt")
-	shardDir := filepath.Join(tmpDir, "shards")
 	qrDir := filepath.Join(tmpDir, "qrcodes")
-	recoveredShards := filepath.Join(tmpDir, "recovered-shards")
-	output := filepath.Join(tmpDir, "recovered.txt")
 
-	// Split with many data shards (small shard size) and high parity to tolerate
-	// occasional QR decode failures in the gozxing library.
-	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "-p", "test123", "-o", shardDir, input); err != nil {
-		t.Fatalf("split failed: %v", err)
-	}
-
-	// Export shards as QR codes
-	out, err := runHrcx(t, "export-qr", "-o", qrDir, shardDir)
+	// Split with many data shards (small shard size) and distribute as QR codes
+	out, err := runHrcx(t, "split", "-n", "10", "-k", "8", "-p", "test123",
+		"--distribute", "qr://"+qrDir, input)
 	if err != nil {
-		t.Fatalf("export-qr failed: %v\n%s", err, out)
+		t.Fatalf("split --distribute qr failed: %v\n%s", err, out)
 	}
 
-	// Verify QR code files were created
+	// Verify QR code PNG files were created for all 18 shards
 	entries, err := os.ReadDir(qrDir)
 	if err != nil {
 		t.Fatalf("cannot read QR output dir: %v", err)
@@ -1378,66 +1370,38 @@ func TestE2E_ExportImportQR_RoundTrip(t *testing.T) {
 			pngCount++
 		}
 	}
-	if pngCount == 0 {
-		t.Fatal("no PNG files created by export-qr")
-	}
-
-	// Import QR codes back to shard files
-	out, err = runHrcx(t, "import-qr", "-o", recoveredShards, qrDir)
-	if err != nil {
-		t.Fatalf("import-qr failed: %v\n%s", err, out)
-	}
-
-	// Merge recovered shards
-	if _, err := runHrcx(t, "merge", "-p", "test123", "-o", output, recoveredShards); err != nil {
-		t.Fatalf("merge failed: %v", err)
-	}
-
-	// Verify SHA-256 match
-	if fileSHA256(t, input) != fileSHA256(t, output) {
-		t.Fatal("SHA-256 mismatch after QR round-trip")
+	if pngCount != 18 {
+		t.Fatalf("expected 18 PNG files, got %d", pngCount)
 	}
 }
 
-func TestE2E_ExportQR_OversizedShard(t *testing.T) {
+func TestE2E_QRBackend_OversizedShard(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := filepath.Join(tmpDir, "large.bin")
 	createRandomFile(t, input, 10*1024) // 10KB
-	shardDir := filepath.Join(tmpDir, "shards")
+	qrDir := filepath.Join(tmpDir, "qrcodes")
 
-	// Split with few data shards so each shard is large
-	if _, err := runHrcx(t, "split", "-n", "2", "--no-encrypt", "-o", shardDir, input); err != nil {
-		t.Fatalf("split failed: %v", err)
-	}
-
-	// export-qr should fail because shards are too large
-	out, err := runHrcx(t, "export-qr", shardDir)
+	// Split with few data shards so each shard is large; distribute should fail
+	out, err := runHrcx(t, "split", "-n", "2", "--no-encrypt",
+		"--distribute", "qr://"+qrDir, input)
 	if err == nil {
-		t.Fatal("expected export-qr to fail with oversized shards")
+		t.Fatal("expected split --distribute qr to fail with oversized shards")
 	}
-	if !strings.Contains(out, "exceed QR code capacity") {
+	if !strings.Contains(out, "exceeds QR capacity") {
 		t.Fatalf("expected capacity error message, got: %s", out)
-	}
-	if !strings.Contains(out, "more data shards") {
-		t.Fatalf("expected hint about more data shards, got: %s", out)
 	}
 }
 
-func TestE2E_ExportQR_SVG(t *testing.T) {
+func TestE2E_QRBackend_SVG(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := testdataPath("small.txt")
-	shardDir := filepath.Join(tmpDir, "shards")
 	qrDir := filepath.Join(tmpDir, "qrcodes")
 
-	// Split with many data shards to keep each shard small
-	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt", "-o", shardDir, input); err != nil {
-		t.Fatalf("split failed: %v", err)
-	}
-
-	// Export as SVG
-	out, err := runHrcx(t, "export-qr", "-f", "svg", "-o", qrDir, shardDir)
+	// Split with many data shards to keep each shard small, distribute as SVG
+	out, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt",
+		"--distribute", "qr://"+qrDir+"?format=svg", input)
 	if err != nil {
-		t.Fatalf("export-qr --format svg failed: %v\n%s", err, out)
+		t.Fatalf("split --distribute qr svg failed: %v\n%s", err, out)
 	}
 
 	// Verify SVG files were created
@@ -1452,7 +1416,7 @@ func TestE2E_ExportQR_SVG(t *testing.T) {
 		}
 	}
 	if svgCount == 0 {
-		t.Fatal("no SVG files created by export-qr --format svg")
+		t.Fatal("no SVG files created by split --distribute qr svg")
 	}
 }
 
@@ -1676,28 +1640,23 @@ func TestE2E_BackwardCompat_PasswordOnly(t *testing.T) {
 	}
 }
 
-func TestE2E_ExportQR_NoEncryption(t *testing.T) {
+func TestE2E_QRBackend_NoEncryption(t *testing.T) {
 	tmpDir := t.TempDir()
 	input := testdataPath("small.txt")
-	shardDir := filepath.Join(tmpDir, "shards")
 	qrDir := filepath.Join(tmpDir, "qrcodes")
-	recoveredShards := filepath.Join(tmpDir, "recovered-shards")
 	output := filepath.Join(tmpDir, "recovered.txt")
 
 	// Split without encryption, high parity to tolerate QR decode failures
-	if _, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt", "-o", shardDir, input); err != nil {
-		t.Fatalf("split failed: %v", err)
+	out, err := runHrcx(t, "split", "-n", "10", "-k", "8", "--no-encrypt",
+		"--distribute", "qr://"+qrDir, input)
+	if err != nil {
+		t.Fatalf("split --distribute qr failed: %v\n%s", err, out)
 	}
 
-	// Export → Import round-trip
-	if _, err := runHrcx(t, "export-qr", "-o", qrDir, shardDir); err != nil {
-		t.Fatalf("export-qr failed: %v", err)
-	}
-	if _, err := runHrcx(t, "import-qr", "-o", recoveredShards, qrDir); err != nil {
-		t.Fatalf("import-qr failed: %v", err)
-	}
-	if _, err := runHrcx(t, "merge", "-o", output, recoveredShards); err != nil {
-		t.Fatalf("merge failed: %v", err)
+	// Collect from QR codes and merge
+	out, err = runHrcx(t, "merge", "--collect", "qr://"+qrDir, "-o", output)
+	if err != nil {
+		t.Fatalf("merge --collect qr failed: %v\n%s", err, out)
 	}
 
 	if fileSHA256(t, input) != fileSHA256(t, output) {

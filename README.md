@@ -17,7 +17,7 @@ A cross-platform CLI tool that splits files into encrypted, erasure-coded shards
 - **Weighted distribution** -- proportional shard allocation across backends with `*N` syntax
 - **Interactive wizard** -- guided split configuration via `-i` flag
 - **Manifest distribution** -- auto-distribute and auto-discover manifests on backends
-- **QR code export/import** -- export small shards as QR codes for paper backup
+- **QR code distribution** -- distribute small shards as QR codes for paper backup via the `qr://` backend
 - **Shard verification** -- check integrity and recoverability without decryption
 - **Streaming pipeline** with constant memory usage (~15 MB regardless of file size)
 - **Corruption tolerance** -- corrupt shards are automatically detected and excluded during reconstruction
@@ -126,24 +126,6 @@ hrcx merge --key-file secret.key -p "my-password" ./shards/
 
 The key file can be any file (1 byte to 1 MB). Its SHA-256 hash is used as key material. When combined with a password, both are required to decrypt.
 
-### QR code export/import
-
-Export small shards as QR codes for paper backup. Each QR code supports up to ~2.2 KB of shard data, so use high data-shard counts to keep individual shards small.
-
-```bash
-# Export shards as QR codes (PNG)
-hrcx export-qr ./shards/
-
-# Export as SVG
-hrcx export-qr -f svg -o ./qrcodes/ ./shards/
-
-# Import shards from QR code images
-hrcx import-qr ./qrcodes/
-
-# Import a single QR image
-hrcx import-qr photo.png
-```
-
 ### Cloud backend distribution
 
 Distribute shards to remote storage backends during split, or collect them before merge.
@@ -169,6 +151,13 @@ hrcx merge --collect s3://my-bucket/shards --manifest manifest.json
 
 # Auto-discover manifest on backends (no --manifest needed)
 hrcx merge --collect s3://bucket/shards,azure://container/shards
+
+# Distribute shards as QR codes for paper backup (PNG or SVG)
+hrcx split --distribute "qr:///path/to/qrcodes" secret.pdf
+hrcx split --distribute "qr:///path/to/qrcodes?format=svg" secret.pdf
+
+# Collect shards from QR code images
+hrcx merge --collect "qr:///path/to/qrcodes"
 ```
 
 When `--distribute-manifest` is used, the manifest is uploaded to every backend. During `--collect`, if a manifest is found on any backend it is automatically used for guided collection and output verification -- no `--manifest` flag required.
