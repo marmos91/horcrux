@@ -13,6 +13,9 @@ tests/testdata/medium.bin
 *.swp
 *.swo
 
+# Nix
+result
+
 # OS
 .DS_Store
 Thumbs.db
