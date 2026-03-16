@@ -9,6 +9,7 @@ import (
 	"github.com/marmos91/horcrux/internal/display"
 	"github.com/marmos91/horcrux/internal/pipeline"
 	"github.com/marmos91/horcrux/internal/progress"
+	"github.com/marmos91/horcrux/internal/version"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"golang.org/x/term"
@@ -25,6 +26,7 @@ var rootCmd = &cobra.Command{
 	Use:               "hrcx",
 	Short:             "Split files into encrypted, erasure-coded shards",
 	Long:              "Horcrux splits files into encrypted, erasure-coded shards and reconstructs them from a subset of those shards.",
+	Version:           version.Version,
 	PersistentPreRunE: loadConfig,
 }
 

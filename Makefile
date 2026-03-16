@@ -1,6 +1,6 @@
 BINARY_NAME=hrcx
 VERSION?=0.1.0
-LDFLAGS=-ldflags "-s -w -X main.version=$(VERSION)"
+LDFLAGS=-ldflags "-s -w -X github.com/marmos91/horcrux/internal/version.Version=$(VERSION)"
 
 .PHONY: build test lint clean cross-compile fmt fmt-check setup-hooks
 
