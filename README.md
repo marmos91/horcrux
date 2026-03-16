@@ -14,6 +14,9 @@ A cross-platform CLI tool that splits files into encrypted, erasure-coded shards
 - **Key file support** -- use a key file alone or combined with a password for two-factor encryption
 - **Fast credential verification** via HMAC tag (detects wrong password or key file without processing the entire file)
 - **Cloud backend integration** -- distribute shards to S3, Azure Blob, Google Drive, Dropbox, or FTP
+- **Weighted distribution** -- proportional shard allocation across backends with `*N` syntax
+- **Interactive wizard** -- guided split configuration via `-i` flag
+- **Manifest distribution** -- auto-distribute and auto-discover manifests on backends
 - **QR code export/import** -- export small shards as QR codes for paper backup
 - **Shard verification** -- check integrity and recoverability without decryption
 - **Streaming pipeline** with constant memory usage (~15 MB regardless of file size)
@@ -64,6 +67,16 @@ hrcx split --no-encrypt large-video.mp4
 # Verbose output
 hrcx split -v -p "my-password" secret.pdf
 ```
+
+### Interactive mode
+
+Use the `-i` flag for a guided wizard that walks you through split configuration:
+
+```bash
+hrcx split -i secret.pdf
+```
+
+The wizard prompts for shard counts, encryption, output directory, backend distribution, and weights -- ideal when you're not sure which flags to use.
 
 Shards are named `<filename>.<index>.hrcx`. With the default 5 data + 3 parity shards:
 
@@ -142,12 +155,23 @@ hrcx split --distribute s3://my-bucket/shards secret.pdf
 # Split and distribute to multiple backends
 hrcx split --distribute s3://bucket/shards,azure://container/shards secret.pdf
 
+# Weighted distribution (3 shards to S3, 2 to Azure)
+hrcx split --distribute "s3://bucket/shards*3,azure://container/shards*2" secret.pdf
+
+# Distribute the manifest alongside shards
+hrcx split --distribute s3://bucket/shards --distribute-manifest secret.pdf
+
 # Collect from backends and merge
 hrcx merge --collect s3://my-bucket/shards
 
 # Collect using a manifest (downloads only needed shards)
 hrcx merge --collect s3://my-bucket/shards --manifest manifest.json
+
+# Auto-discover manifest on backends (no --manifest needed)
+hrcx merge --collect s3://bucket/shards,azure://container/shards
 ```
+
+When `--distribute-manifest` is used, the manifest is uploaded to every backend. During `--collect`, if a manifest is found on any backend it is automatically used for guided collection and output verification -- no `--manifest` flag required.
 
 **Supported backends:**
 
@@ -158,6 +182,7 @@ hrcx merge --collect s3://my-bucket/shards --manifest manifest.json
 | Google Drive | `gdrive:///folder/path` | Service account JSON or credentials file |
 | Dropbox | `dropbox:///folder/path` | Access token |
 | FTP/FTPS | `ftp://host/path` | Username/password |
+| QR code | `qr:///path` | Filesystem access |
 | Local | `file:///absolute/path` | Filesystem access |
 
 Backend credentials can be configured via environment variables or the config file (see [Configuration](#configuration-file)).
@@ -228,7 +253,15 @@ A manifest JSON file is generated alongside shards during split. It records file
 # Annotate shard locations in a manifest
 hrcx manifest annotate manifest.json 0 "USB drive A"
 hrcx manifest annotate manifest.json 1 "office safe"
+
+# Distribute the manifest to all backends during split
+hrcx split --distribute s3://bucket/shards --distribute-manifest secret.pdf
+
+# Auto-discovery: collect finds the manifest on backends automatically
+hrcx merge --collect s3://bucket/shards
 ```
+
+When `--distribute-manifest` is used, the manifest is uploaded to every distribution backend. During `--collect`, the manifest is automatically discovered on backends and used for guided collection with SHA-256 output verification.
 
 ### Configuration file
 

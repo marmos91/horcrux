@@ -416,7 +416,16 @@ func peekOriginalFilename(dir string) (string, error) {
 
 // SaveManifest builds and saves a manifest for a single file's split result.
 func SaveManifest(result *SplitResult, outDir string) error {
+	_, err := SaveManifestPath(result, outDir)
+	return err
+}
+
+// SaveManifestPath builds and saves a manifest, returning the written file path.
+func SaveManifestPath(result *SplitResult, outDir string) (string, error) {
 	m := result.BuildManifest()
 	manifestPath := filepath.Join(outDir, manifest.ManifestFilename(result.OriginalName))
-	return m.Save(manifestPath)
+	if err := m.Save(manifestPath); err != nil {
+		return "", err
+	}
+	return manifestPath, nil
 }
