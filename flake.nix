@@ -22,6 +22,7 @@
             inherit version;
             src = ./.;
             vendorHash = "sha256-rd/PINLQxkeDC1ZP+itZtpUqtGkx3YDoF03mE6Ppxys=";
+            env.CGO_ENABLED = 0;
 
             postInstall = ''
               mv $out/bin/horcrux $out/bin/hrcx
